@@ -108,29 +108,27 @@ object NbGeoStore {
         save(context)
     }
 
-    private const val KEY_GROUPS = "geo_groups"
+    private const val KEY_COLLAPSE = "geo_collapse"
 
-    fun trackedGroupNames(context: Context): Set<String> {
-        val raw = prefs(context).getString(KEY_GROUPS, null) ?: return emptySet()
+    /** Stored expand state for a list section; null = no stored state. */
+    fun sectionExpanded(context: Context, groupId: Long, key: String): Boolean? {
+        val raw = prefs(context).getString(KEY_COLLAPSE, null) ?: return null
         return runCatching {
-            val arr = org.json.JSONArray(raw)
-            (0 until arr.length()).map { arr.getString(it) }.toSet()
-        }.getOrDefault(emptySet())
+            val json = JSONObject(raw)
+            if (json.has("$groupId|$key")) json.getBoolean("$groupId|$key") else null
+        }.getOrNull()
     }
 
-    fun recordGroupName(context: Context, name: String) {
-        val names = trackedGroupNames(context) + name
-        val arr = org.json.JSONArray()
-        names.forEach { arr.put(it) }
-        prefs(context).edit().putString(KEY_GROUPS, arr.toString()).apply()
+    fun setSectionExpanded(context: Context, groupId: Long, key: String, expanded: Boolean) {
+        val raw = prefs(context).getString(KEY_COLLAPSE, null)
+        val json = runCatching { if (raw != null) JSONObject(raw) else JSONObject() }
+            .getOrDefault(JSONObject())
+        json.put("$groupId|$key", expanded)
+        prefs(context).edit().putString(KEY_COLLAPSE, json.toString()).apply()
     }
 
-    fun clearTrackedGroupNames(context: Context) {
-        prefs(context).edit().remove(KEY_GROUPS).apply()
-    }
-
-    /** Display name for a country group tab, e.g. "🇺🇸 美国". */
-    fun countryGroupName(countryCode: String): String {
+    /** Section title for a country, e.g. "🇺🇸 美国". */
+    fun countryTitle(countryCode: String): String {
         val cc = countryCode.uppercase()
         val cn = runCatching {
             java.util.Locale("", cc).getDisplayCountry(java.util.Locale.CHINESE)
@@ -203,45 +201,10 @@ object NbGeoProbe {
             }
             jobs.forEach { it.join() }
         }
-        distribute(context, groupId)
+        // Sections are rendered from the country store; just reload the list.
+        GroupManager.postReload(groupId)
     }
 
-    /**
-     * Move every profile whose country is known out of the source
-     * group into its country group (created on demand, e.g.
-     * "🇺🇸 美国"); unknown/unreachable nodes stay in the source group.
-     */
-    private suspend fun distribute(context: Context, sourceGroupId: Long) =
-        withContext(Dispatchers.IO) {
-            val profiles = SagerDatabase.proxyDao.getByGroup(sourceGroupId)
-            if (profiles.isEmpty()) return@withContext
-            val byCountry = profiles.groupBy {
-                NbGeoStore.countryFor(context, it.requireBean())
-            }
-            val movedGroups = mutableListOf<Long>()
-            for ((cc, members) in byCountry) {
-                if (cc == null) continue
-                val name = NbGeoStore.countryGroupName(cc)
-                val existing = SagerDatabase.groupDao.allGroups()
-                    .firstOrNull { it.name == name }
-                val target = existing ?: GroupManager.createGroup(
-                    io.nekohasekai.sagernet.database.ProxyGroup(name = name)
-                )
-                NbGeoStore.recordGroupName(context, name)
-                members.forEachIndexed { index, profile ->
-                    profile.groupId = target.id
-                    profile.userOrder = index.toLong()
-                }
-                SagerDatabase.proxyDao.updateProxy(members)
-                movedGroups.add(target.id)
-            }
-            if (movedGroups.isNotEmpty()) {
-                for (gid in movedGroups) {
-                    GroupManager.postReload(gid)
-                }
-                GroupManager.postReload(sourceGroupId)
-                Log.i(TAG, "distributed profiles into ${movedGroups.size} country groups")
-            }
-        }
+
 
 }

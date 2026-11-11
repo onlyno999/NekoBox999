@@ -85,6 +85,8 @@ class MainActivity : ThemedActivity(),
                 }
             }
         }
+        // NekoBox999: resume the country load-balancer loop if one is active.
+        io.nekohasekai.sagernet.auth.NbLoadBalancer.ensureLoop(this)
         // NekoBox999: fill in missing node countries in the background.
         lifecycleScope.launch {
             val managed = io.nekohasekai.sagernet.database.SagerDatabase.groupDao.allGroups()
