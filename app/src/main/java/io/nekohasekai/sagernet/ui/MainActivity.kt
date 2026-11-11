@@ -85,6 +85,12 @@ class MainActivity : ThemedActivity(),
                 }
             }
         }
+        // NekoBox999: geo route assets auto-update (first open, then daily).
+        lifecycleScope.launch {
+            if (io.nekohasekai.sagernet.auth.NbAssetUpdater.due(this@MainActivity)) {
+                io.nekohasekai.sagernet.auth.NbAssetUpdater.updateAll(this@MainActivity)
+            }
+        }
         if (io.nekohasekai.sagernet.auth.NbAuthManager.entryCheckDue(this) ||
             io.nekohasekai.sagernet.auth.NbAuthManager.validationDue(this)
         ) {

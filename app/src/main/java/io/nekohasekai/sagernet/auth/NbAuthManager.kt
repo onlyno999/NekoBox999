@@ -48,6 +48,7 @@ object NbAuthManager {
     private const val KEY_PUB = "pref_online_pubkey"
     private const val KEY_FALLBACK_ID = "pref_fallback_android_id"
     private const val KEY_LAST_SYNC_MS = "pref_last_sync_ms"
+    private const val KEY_LAST_ASSET_MS = "pref_last_asset_ms"
 
     /** The built-in subscription group is managed when its link is the base address. */
     fun isManagedLink(link: String?): Boolean {
@@ -102,6 +103,13 @@ object NbAuthManager {
 
     fun markSynced(context: Context) {
         putLong(context, KEY_LAST_SYNC_MS, System.currentTimeMillis())
+    }
+
+    /** Epoch ms of the last geo-asset update check; 0 = never. */
+    fun lastAssetCheckMs(context: Context): Long = getLong(context, KEY_LAST_ASSET_MS, 0L)
+
+    fun markAssetChecked(context: Context) {
+        putLong(context, KEY_LAST_ASSET_MS, System.currentTimeMillis())
     }
 
     // ---------- machine code (same format as the v2one999 client) ----------
