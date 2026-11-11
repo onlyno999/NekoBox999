@@ -72,17 +72,13 @@ class MainActivity : ThemedActivity(),
         // NekoBox999: silent subscription auto-update on open —
         // first open always, then at most once every 12 hours.
         lifecycleScope.launch {
-            val group = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                io.nekohasekai.sagernet.database.SagerDatabase.groupDao.allGroups().firstOrNull {
-                    it.type == io.nekohasekai.sagernet.GroupType.SUBSCRIPTION &&
-                        io.nekohasekai.sagernet.auth.NbAuthManager.isManagedLink(it.subscription?.link)
-                }
+            val group = io.nekohasekai.sagernet.auth.NbSubscriptionSync.ensureManagedGroup()
+            val last = io.nekohasekai.sagernet.auth.NbAuthManager.lastSyncMs(this@MainActivity)
+            val empty = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.nekohasekai.sagernet.database.SagerDatabase.proxyDao.countByGroup(group.id) == 0L
             }
-            if (group != null) {
-                val last = io.nekohasekai.sagernet.auth.NbAuthManager.lastSyncMs(this@MainActivity)
-                if (last <= 0L || System.currentTimeMillis() - last >= 12 * 60 * 60_000L) {
-                    io.nekohasekai.sagernet.auth.NbSubscriptionSync.sync(group)
-                }
+            if (empty || last <= 0L || System.currentTimeMillis() - last >= 12 * 60 * 60_000L) {
+                io.nekohasekai.sagernet.auth.NbSubscriptionSync.sync(group)
             }
         }
         // NekoBox999: resume the country load-balancer loop if one is active.

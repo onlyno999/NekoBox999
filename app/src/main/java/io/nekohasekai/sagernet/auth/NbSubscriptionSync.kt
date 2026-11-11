@@ -25,6 +25,34 @@ object NbSubscriptionSync {
         data class Failed(val reason: String) : Result
     }
 
+    /**
+     * The built-in subscription group, created on the spot when it
+     * does not exist yet — first entry right after activation must
+     * not depend on the main UI having seeded it first.
+     */
+    suspend fun ensureManagedGroup(): ProxyGroup = withContext(Dispatchers.IO) {
+        val groups = SagerDatabase.groupDao.allGroups()
+        groups.firstOrNull {
+            NbAuthManager.isManagedLink(it.subscription?.link)
+        }?.let { return@withContext it }
+        // Build the seed the same way the configuration UI does.
+        val subBean = io.nekohasekai.sagernet.database.SubscriptionBean()
+        subBean.link = NbAuthManager.homeUrl()
+        subBean.autoUpdate = true
+        subBean.autoUpdateDelay = 720
+        val group = ProxyGroup(
+            name = "v2one999",
+            type = io.nekohasekai.sagernet.GroupType.SUBSCRIPTION,
+            subscription = subBean
+        )
+        group.initializeDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        if (groups.isEmpty()) {
+            SagerDatabase.groupDao.createGroup(ProxyGroup(ungrouped = true))
+        }
+        group
+    }
+
     suspend fun sync(group: ProxyGroup): Result = withContext(Dispatchers.IO) {
         val selectedId = DataStore.selectedProxy
         val selectedKey = try {

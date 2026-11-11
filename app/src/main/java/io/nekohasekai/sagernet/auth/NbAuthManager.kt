@@ -51,6 +51,9 @@ object NbAuthManager {
     private const val KEY_LAST_ASSET_MS = "pref_last_asset_ms"
 
     /** The built-in subscription group is managed when its link is the base address. */
+    /** The built-in subscription group's home link. */
+    fun homeUrl(): String = BASE_URL
+
     fun isManagedLink(link: String?): Boolean {
         val l = link?.trim()?.trimEnd('/') ?: return false
         return l == BASE_URL

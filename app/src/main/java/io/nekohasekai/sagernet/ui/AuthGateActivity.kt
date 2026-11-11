@@ -109,21 +109,14 @@ class AuthGateActivity : AppCompatActivity() {
 
     private suspend fun enterApp() {
         setBusy(true, "授权通过，正在获取订阅…")
-        val group = withContext(Dispatchers.IO) {
-            SagerDatabase.groupDao.allGroups().firstOrNull {
-                it.type == GroupType.SUBSCRIPTION &&
-                    NbAuthManager.isManagedLink(it.subscription?.link)
-            }
+        val group = NbSubscriptionSync.ensureManagedGroup()
+        when (val r = NbSubscriptionSync.sync(group)) {
+            is NbSubscriptionSync.Result.Ok ->
+                setBusy(true, "订阅已下发：${r.count} 个节点，正在进入…")
+            is NbSubscriptionSync.Result.Failed ->
+                setBusy(true, "订阅没拉下来：${r.reason}。先进应用，可在抽屉里点更新当前组订阅。")
         }
-        if (group != null) {
-            when (val r = NbSubscriptionSync.sync(group)) {
-                is NbSubscriptionSync.Result.Ok ->
-                    setBusy(true, "订阅已下发：${r.count} 个节点，正在进入…")
-                is NbSubscriptionSync.Result.Failed ->
-                    setBusy(true, "订阅没拉下来：${r.reason}。先进应用，可在分组里再点更新订阅。")
-            }
-            delay(900)
-        }
+        delay(900)
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }
