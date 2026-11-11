@@ -116,6 +116,10 @@ class MainActivity : ThemedActivity(),
             binding.drawerLayout.removeView(binding.navView)
         }
         navigation.setNavigationItemSelectedListener(this)
+        // NekoBox999: drawer locked closed, entrance removed
+        binding.drawerLayout.setDrawerLockMode(
+            androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED
+        )
 
         if (savedInstanceState == null) {
             displayFragmentWithId(R.id.nav_configuration)

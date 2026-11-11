@@ -96,6 +96,9 @@
                         <item
                 android:id="@+id/action_connection_test_delete_unavailable"
                 android:title="@string/connection_test_delete_unavailable" />
+            <item
+                android:id="@+id/action_open_settings"
+                android:title="设置功能" />
                     </menu>
     </item>
 

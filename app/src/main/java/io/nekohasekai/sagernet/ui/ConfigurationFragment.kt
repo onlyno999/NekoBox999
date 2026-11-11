@@ -446,6 +446,10 @@ class ConfigurationFragment @JvmOverloads constructor(
                 startActivity(Intent(requireActivity(), ChainSettingsActivity::class.java))
             }
 
+            R.id.action_open_settings -> {
+                (requireActivity() as MainActivity).displayFragment(SettingsFragment())
+            }
+
             R.id.action_update_subscription -> {
                 val group = DataStore.currentGroup()
                 if (group.type != GroupType.SUBSCRIPTION) {
