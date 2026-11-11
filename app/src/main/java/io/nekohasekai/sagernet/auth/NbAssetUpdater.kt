@@ -2,7 +2,6 @@ package io.nekohasekai.sagernet.auth
 
 import android.content.Context
 import android.util.Log
-import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.database.DataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,7 +44,7 @@ object NbAssetUpdater {
 
     suspend fun updateAll(context: Context) = withContext(Dispatchers.IO) {
         NbAuthManager.markAssetChecked(context)
-        val dir = SagerNet.externalAssets
+        val dir = context.getExternalFilesDir(null) ?: context.filesDir
         for (name in assetNames) {
             runCatching {
                 updateOne(dir, name)
