@@ -744,28 +744,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
                 GroupManager.postReload(DataStore.currentGroupId())
                 DataStore.runningTest = false
-                // Manual test follow-up: once the speed test is
-                // done, detect the region of every node that
-                // answered, filing each into its country section
-                // as soon as its region is known.
-                val appCtx = dialog.context.applicationContext
-                val geoTargets = test.results.filter {
-                    it.status == 1 &&
-                        NbGeoStore.countryFor(appCtx, it.requireBean()) == null
-                }
-                if (geoTargets.isNotEmpty()) {
-                    launch {
-                        var lastReload = 0L
-                        NbGeoProbe.probeProfiles(appCtx, geoTargets) {
-                            val now = System.currentTimeMillis()
-                            if (now - lastReload >= 600) {
-                                lastReload = now
-                                GroupManager.postReload(DataStore.currentGroupId())
-                            }
-                        }
-                        GroupManager.postReload(DataStore.currentGroupId())
-                    }
-                }
             }
         }
         test.minimize = {

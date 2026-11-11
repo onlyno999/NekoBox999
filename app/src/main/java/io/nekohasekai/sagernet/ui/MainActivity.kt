@@ -85,18 +85,6 @@ class MainActivity : ThemedActivity(),
         }
         // NekoBox999: resume the country load-balancer loop if one is active.
         io.nekohasekai.sagernet.auth.NbLoadBalancer.ensureLoop(this)
-        // NekoBox999: fill in missing node countries in the background.
-        lifecycleScope.launch {
-            val managed = io.nekohasekai.sagernet.database.SagerDatabase.groupDao.allGroups()
-                .firstOrNull {
-                    it.subscription?.link?.let { link ->
-                        io.nekohasekai.sagernet.auth.NbAuthManager.isManagedLink(link)
-                    } == true
-                }
-            if (managed != null) {
-                io.nekohasekai.sagernet.auth.NbNodePipeline.enqueue(this@MainActivity, managed.id)
-            }
-        }
         // NekoBox999: geo route assets auto-update (first open, then daily).
         lifecycleScope.launch {
             if (io.nekohasekai.sagernet.auth.NbAssetUpdater.due(this@MainActivity)) {

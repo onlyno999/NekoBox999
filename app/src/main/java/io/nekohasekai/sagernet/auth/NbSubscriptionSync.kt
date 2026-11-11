@@ -93,7 +93,6 @@ object NbSubscriptionSync {
                     GroupManager.postReload(group.id)
                     NbAuthManager.markSynced(app)
                     // NekoBox999: probe node countries, then group by country.
-                    NbNodePipeline.enqueue(app, group.id)
                     Result.Ok(beans.size)
                 }
             }
