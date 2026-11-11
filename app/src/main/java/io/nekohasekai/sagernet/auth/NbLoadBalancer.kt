@@ -89,15 +89,46 @@ object NbLoadBalancer {
         try {
             val cc = activeCountry(app) ?: return
             val groupId = managedGroupId() ?: return
-            val profiles = withContext(Dispatchers.IO) {
-                SagerDatabase.proxyDao.getByGroup(groupId).filter {
-                    NbGeoStore.countryFor(app, it.requireBean()) == cc
-                }
+            val all = withContext(Dispatchers.IO) {
+                SagerDatabase.proxyDao.getByGroup(groupId)
             }
-            if (profiles.isEmpty()) return
-            Log.i(TAG, "round for $cc over ${profiles.size} profiles")
+            if (all.isEmpty()) return
 
-            val queue = ConcurrentLinkedQueue(profiles)
+            // Phase 1: re-check the regions of the WHOLE group, not
+            // just the active country's section. Exits move: a node
+            // filed under one country may sit somewhere else by now,
+            // and one filed elsewhere may have moved in. Every node
+            // whose exit country is known lands in its real section.
+            val sweepQueue = ConcurrentLinkedQueue(all)
+            val sweepers = mutableListOf<Job>()
+            repeat(32) {
+                sweepers.add(scope.launch {
+                    while (true) {
+                        val profile = sweepQueue.poll() ?: break
+                        val stored = NbGeoStore.countryFor(app, profile.requireBean())
+                        val actual = runCatching {
+                            GeoTest().doFetchCountry(profile)
+                        }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
+                        if (actual != null && actual != stored) {
+                            NbGeoStore.record(app, profile.requireBean(), actual)
+                        }
+                    }
+                })
+            }
+            sweepers.forEach { it.join() }
+
+            // Phase 2: speed-test the active country's members (the
+            // membership just corrected by the sweep) and race them.
+            val members = all.filter {
+                NbGeoStore.countryFor(app, it.requireBean()) == cc
+            }
+            if (members.isEmpty()) {
+                Log.i(TAG, "round for $cc: no members after region sweep")
+                return
+            }
+            Log.i(TAG, "round for $cc over ${members.size} profiles")
+
+            val queue = ConcurrentLinkedQueue(members)
             val eligible = ConcurrentLinkedQueue<ProxyEntity>()
             val workers = mutableListOf<Job>()
             val concurrent = DataStore.connectionTestConcurrent.coerceIn(1, 16)
@@ -105,7 +136,7 @@ object NbLoadBalancer {
                 workers.add(scope.launch {
                     while (true) {
                         val profile = queue.poll() ?: break
-                        if (verifyAndTest(profile, cc)) {
+                        if (testPing(profile)) {
                             eligible.add(profile)
                         }
                     }
@@ -179,20 +210,8 @@ object NbLoadBalancer {
         }
     }
 
-    /**
-     * Verify-then-test one candidate: the node must first prove,
-     * through its own exit, that it still sits in the target country;
-     * only then does it enter the latency race. A node whose exit
-     * moved countries is re-filed under its real country and skipped.
-     */
-    private suspend fun verifyAndTest(profile: ProxyEntity, cc: String): Boolean {
-        val actual = runCatching {
-            GeoTest().doFetchCountry(profile)
-        }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
-        if (actual != null && actual != cc) {
-            NbGeoStore.record(app, profile.requireBean(), actual)
-            return false
-        }
+    /** Speed-test one candidate of the active country. */
+    private suspend fun testPing(profile: ProxyEntity): Boolean {
         return try {
             val result = UrlTest().doTest(profile)
             profile.status = 1
@@ -206,4 +225,5 @@ object NbLoadBalancer {
             false
         }
     }
+
 }
