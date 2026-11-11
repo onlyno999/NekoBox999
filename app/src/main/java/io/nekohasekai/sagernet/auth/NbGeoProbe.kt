@@ -197,16 +197,14 @@ object NbGeoProbe {
             if (targets.isEmpty()) return@withContext
             val queue = ConcurrentLinkedQueue(targets)
             val jobs = mutableListOf<kotlinx.coroutines.Job>()
-            repeat(2) {
+            repeat(minOf(100, targets.size)) {
                 jobs.add(launch {
                     while (true) {
                         if (DataStore.runningTest) break
                         val profile = queue.poll() ?: break
                         val bean = profile.requireBean()
                         val cc = runCatching {
-                            val body = GeoTest().doFetch(profile)
-                            JSONObject(body).optString("country_code")
-                                .takeIf { it.isNotBlank() }
+                            GeoTest().doFetchCountry(profile)
                         }.getOrNull()
                         NbGeoStore.record(context, bean, cc)
                         onProbed?.let { runCatching { it() } }

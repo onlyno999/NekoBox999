@@ -140,7 +140,7 @@ object NbLoadBalancer {
      */
     private suspend fun verifyAndTest(profile: ProxyEntity, cc: String): Boolean {
         val actual = runCatching {
-            JSONObject(GeoTest().doFetch(profile)).optString("country_code")
+            GeoTest().doFetchCountry(profile)
         }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
         if (actual == null) return false
         if (actual != cc) {
