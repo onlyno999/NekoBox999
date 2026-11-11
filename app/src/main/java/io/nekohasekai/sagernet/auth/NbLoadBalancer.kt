@@ -26,8 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Per-country load balancing for NekoBox999: one country section can
  * be marked "auto". A round URL-tests only that country's nodes,
  * selects the reachable one with the lowest latency, and (when the
- * service is running) switches the connection to it. Rounds repeat
- * every 5 minutes for that country only. The loop lives in the app
+ * service is running) switches the connection to it. Speed rounds
+ * repeat every 10 minutes, whole-group region sweeps every 30,
+ * and a 30-second watchdog re-races the country at once when the
+ * node in use dies twice in a row. The loop lives in the app
  * process; it resumes on the next app start while a country is active.
  */
 object NbLoadBalancer {
@@ -35,16 +37,28 @@ object NbLoadBalancer {
     private const val TAG = "NbLB"
     private const val PREFS = "nb999_lb"
     private const val KEY_COUNTRY = "lb_country"
-    private const val INTERVAL_MS = 5 * 60_000L
+    private const val SPEED_INTERVAL_MS = 10 * 60_000L
+    private const val REGION_INTERVAL_MS = 30 * 60_000L
+    private const val WATCHDOG_MS = 30_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val roundRunning = AtomicBoolean(false)
+    private val sweepRunning = AtomicBoolean(false)
 
     @Volatile
     private var roundDone: kotlinx.coroutines.CompletableDeferred<Unit>? = null
 
     @Volatile
-    private var loopJob: Job? = null
+    private var speedJob: Job? = null
+
+    @Volatile
+    private var regionJob: Job? = null
+
+    @Volatile
+    private var watchdogJob: Job? = null
+
+    @Volatile
+    private var watchdogFails = 0
 
     fun activeCountry(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -56,22 +70,72 @@ object NbLoadBalancer {
             else putString(KEY_COUNTRY, countryCode.uppercase())
         }.apply()
         if (countryCode.isNullOrBlank()) {
-            loopJob?.cancel()
-            loopJob = null
+            stopLoops()
         } else {
             ensureLoop(context)
             scope.launch { runRound() }
         }
     }
 
-    /** Start the 5-minute loop if a country is active and no loop runs. */
+    private fun stopLoops() {
+        speedJob?.cancel(); speedJob = null
+        regionJob?.cancel(); regionJob = null
+        watchdogJob?.cancel(); watchdogJob = null
+        watchdogFails = 0
+    }
+
+    /** Start the periodic loops if a country is active. */
     fun ensureLoop(context: Context) {
         if (activeCountry(context) == null) return
-        if (loopJob?.isActive == true) return
-        loopJob = scope.launch {
-            while (isActive) {
-                delay(INTERVAL_MS)
-                runRound()
+        if (speedJob?.isActive != true) {
+            speedJob = scope.launch {
+                while (isActive) {
+                    delay(SPEED_INTERVAL_MS)
+                    runSpeedRound()
+                }
+            }
+        }
+        if (regionJob?.isActive != true) {
+            regionJob = scope.launch {
+                while (isActive) {
+                    delay(REGION_INTERVAL_MS)
+                    runRegionSweep()
+                }
+            }
+        }
+        if (watchdogJob?.isActive != true) {
+            watchdogJob = scope.launch {
+                while (isActive) {
+                    delay(WATCHDOG_MS)
+                    watchdogTick()
+                }
+            }
+        }
+    }
+
+    /**
+     * Watchdog: every 30 s, touch the speed-test address through the
+     * node currently in use (one light test, nothing else). Two
+     * failures in a row mean it died mid-session: immediately race
+     * the active country again and switch to its fastest survivor.
+     */
+    private suspend fun watchdogTick() {
+        if (!DataStore.serviceState.connected) return
+        if (activeCountry(app) == null) return
+        if (roundRunning.get()) return
+        val groupId = managedGroupId() ?: return
+        val selected = withContext(Dispatchers.IO) {
+            SagerDatabase.proxyDao.getByGroup(groupId)
+                .firstOrNull { it.id == DataStore.selectedProxy }
+        } ?: return
+        if (testPing(selected)) {
+            watchdogFails = 0
+        } else {
+            watchdogFails++
+            Log.i(TAG, "watchdog: in-use node failed ($watchdogFails)")
+            if (watchdogFails >= 2) {
+                watchdogFails = 0
+                runSpeedRound()
             }
         }
     }
@@ -82,23 +146,27 @@ object NbLoadBalancer {
         }?.id
     }
 
+    /** A full pass: whole-group region sweep, then the speed race. */
     suspend fun runRound() {
-        if (!roundRunning.compareAndSet(false, true)) return
-        val doneSignal = kotlinx.coroutines.CompletableDeferred<Unit>()
-        roundDone = doneSignal
+        runRegionSweep()
+        runSpeedRound()
+    }
+
+    /**
+     * Re-check the regions of the WHOLE group, not just the active
+     * country's section. Exits move: a node filed under one country
+     * may sit somewhere else by now, and one filed elsewhere may
+     * have moved in. Every node whose exit country is known lands
+     * in its real section.
+     */
+    suspend fun runRegionSweep() {
+        if (!sweepRunning.compareAndSet(false, true)) return
         try {
-            val cc = activeCountry(app) ?: return
             val groupId = managedGroupId() ?: return
             val all = withContext(Dispatchers.IO) {
                 SagerDatabase.proxyDao.getByGroup(groupId)
             }
             if (all.isEmpty()) return
-
-            // Phase 1: re-check the regions of the WHOLE group, not
-            // just the active country's section. Exits move: a node
-            // filed under one country may sit somewhere else by now,
-            // and one filed elsewhere may have moved in. Every node
-            // whose exit country is known lands in its real section.
             val sweepQueue = ConcurrentLinkedQueue(all)
             val sweepers = mutableListOf<Job>()
             repeat(32) {
@@ -116,14 +184,29 @@ object NbLoadBalancer {
                 })
             }
             sweepers.forEach { it.join() }
+        } catch (e: Exception) {
+            Log.w(TAG, "region sweep failed", e)
+        } finally {
+            sweepRunning.set(false)
+        }
+    }
 
-            // Phase 2: speed-test the active country's members (the
-            // membership just corrected by the sweep) and race them.
+    /** Speed-test the active country's members and pick the fastest. */
+    suspend fun runSpeedRound() {
+        if (!roundRunning.compareAndSet(false, true)) return
+        val doneSignal = kotlinx.coroutines.CompletableDeferred<Unit>()
+        roundDone = doneSignal
+        try {
+            val cc = activeCountry(app) ?: return
+            val groupId = managedGroupId() ?: return
+            val all = withContext(Dispatchers.IO) {
+                SagerDatabase.proxyDao.getByGroup(groupId)
+            }
             val members = all.filter {
                 NbGeoStore.countryFor(app, it.requireBean()) == cc
             }
             if (members.isEmpty()) {
-                Log.i(TAG, "round for $cc: no members after region sweep")
+                Log.i(TAG, "round for $cc: no members")
                 return
             }
             Log.i(TAG, "round for $cc over ${members.size} profiles")
@@ -201,7 +284,7 @@ object NbLoadBalancer {
             ProfileManager.postUpdate(best.id)
             Log.i(TAG, "connect pick -> ${best.requireBean().displayName()} (${best.ping}ms)")
         }
-        scope.launch { runRound() }
+        scope.launch { runSpeedRound() }
     }
 
     /** Speed-test one candidate of the active country. */
