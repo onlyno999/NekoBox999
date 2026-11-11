@@ -191,7 +191,7 @@ object NbGeoProbe {
     suspend fun probeProfiles(
         context: Context,
         targets: List<ProxyEntity>,
-        onProbed: (() -> Unit)? = null,
+        onProbed: (suspend () -> Unit)? = null,
     ) =
         withContext(Dispatchers.IO) {
             if (targets.isEmpty()) return@withContext
