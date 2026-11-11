@@ -19,11 +19,10 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Post-sync node pipeline for NekoBox999, in the user's fixed order:
- * FIRST speed-test the fresh nodes (which also proves liveness and
- * writes truthful statuses), THEN geo-probe only the nodes that
- * tested alive, and the country sections render from the store last.
- * The geo phase never overlaps this test phase.
+ * Post-sync node pipeline for NekoBox999, in the user's fixed order
+ * (revised 2026-11-11): FIRST geo-probe every node whose country is
+ * still unknown, so each files into its country section; THEN
+ * speed-test the fresh nodes. The two phases never overlap.
  */
 object NbNodePipeline {
 
@@ -49,10 +48,22 @@ object NbNodePipeline {
         val profiles = SagerDatabase.proxyDao.getByGroup(groupId)
         if (profiles.isEmpty()) return@withContext
 
-        // Phase 1: speed test every node whose status is unknown.
+        // Phase 1: geo-probe every node whose country is unknown,
+        // whatever its status, so it files into its country section.
+        val unfiled = profiles.filter { profile ->
+            NbGeoStore.countryFor(context, profile.requireBean()) == null &&
+                !NbGeoStore.attemptedRecently(context, profile.requireBean())
+        }
+        if (unfiled.isNotEmpty()) {
+            Log.i(TAG, "phase 1: geo-probe ${unfiled.size} unfiled nodes")
+            NbGeoProbe.probeProfiles(context, unfiled)
+            GroupManager.postReload(groupId)
+        }
+
+        // Phase 2: speed test every node whose status is unknown.
         val fresh = profiles.filter { it.status == 0 }
         if (fresh.isNotEmpty()) {
-            Log.i(TAG, "phase 1: url-test ${fresh.size} fresh nodes")
+            Log.i(TAG, "phase 2: url-test ${fresh.size} fresh nodes")
             val queue = ConcurrentLinkedQueue(fresh)
             val jobs = mutableListOf<Job>()
             val concurrent = DataStore.connectionTestConcurrent.coerceIn(1, 16)
@@ -65,19 +76,6 @@ object NbNodePipeline {
                 })
             }
             jobs.forEach { it.join() }
-            GroupManager.postReload(groupId)
-        }
-
-        // Phase 2: geo-probe only nodes that tested alive and still
-        // lack a country (or were not attempted in the last day).
-        val alive = profiles.filter { profile ->
-            profile.status == 1 &&
-                NbGeoStore.countryFor(context, profile.requireBean()) == null &&
-                !NbGeoStore.attemptedRecently(context, profile.requireBean())
-        }
-        if (alive.isNotEmpty()) {
-            Log.i(TAG, "phase 2: geo-probe ${alive.size} alive nodes")
-            NbGeoProbe.probeProfiles(context, alive)
             GroupManager.postReload(groupId)
         }
     }

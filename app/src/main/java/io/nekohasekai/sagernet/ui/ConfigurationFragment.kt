@@ -843,6 +843,27 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
                 GroupManager.postReload(DataStore.currentGroupId())
                 DataStore.runningTest = false
+                // Same follow-up as the ping test: detect the
+                // region of every node that answered, filing each
+                // into its country section as soon as it is known.
+                val appCtx = dialog.context.applicationContext
+                val geoTargets = test.results.filter {
+                    it.status == 1 &&
+                        NbGeoStore.countryFor(appCtx, it.requireBean()) == null
+                }
+                if (geoTargets.isNotEmpty()) {
+                    launch {
+                        var lastReload = 0L
+                        NbGeoProbe.probeProfiles(appCtx, geoTargets) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastReload >= 600) {
+                                lastReload = now
+                                GroupManager.postReload(DataStore.currentGroupId())
+                            }
+                        }
+                        GroupManager.postReload(DataStore.currentGroupId())
+                    }
+                }
             }
         }
         test.minimize = {
@@ -1643,6 +1664,19 @@ class ConfigurationFragment @JvmOverloads constructor(
                                 } else {
                                     SagerNet.startService()
                                 }
+                            }
+
+                            // A manually picked node gets its region
+                            // detected right away, so it files into
+                            // its country section.
+                            if (NbGeoStore.countryFor(
+                                    view.context, proxyEntity.requireBean()
+                                ) == null
+                            ) {
+                                NbGeoProbe.probeProfiles(
+                                    view.context, listOf(proxyEntity)
+                                )
+                                GroupManager.postReload(proxyEntity.groupId)
                             }
                         }
 
