@@ -5,7 +5,7 @@
         <item
             android:id="@+id/nav_configuration"
             android:icon="@drawable/ic_action_description"
-            android:title="@string/menu_configuration" />
+            android:title="当前订阅" />
 
         <item
             android:id="@+id/nav_group"
@@ -22,19 +22,19 @@
         <item
             android:id="@+id/nav_settings"
             android:icon="@drawable/ic_action_settings"
-            android:title="@string/settings" />
+            android:title="设置系统" />
     </group>
 
     <group>
         <item
             android:id="@+id/nav_update_subscription"
             android:icon="@drawable/ic_baseline_update_24"
-            android:title="@string/update_current_subscription" />
+            android:title="更新订阅" />
 
         <item
             android:id="@+id/nav_delete_unavailable"
             android:icon="@drawable/baseline_delete_sweep_24"
-            android:title="@string/connection_test_delete_unavailable" />
+            android:title="清理失效" />
     </group>
 
     <group
@@ -50,7 +50,7 @@
         <item
             android:id="@+id/nav_url_test"
             android:icon="@drawable/ic_baseline_speed_24"
-            android:title="@string/connection_test_url_test" />
+            android:title="一键测速" />
     </group>
 
 </menu>
