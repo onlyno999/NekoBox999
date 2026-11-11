@@ -28,8 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * selects the reachable one with the lowest latency, and (when the
  * service is running) switches the connection to it. Speed rounds
  * repeat every 10 minutes, whole-group region sweeps every 30,
- * and a 30-second watchdog re-races the country at once when the
- * node in use dies twice in a row. The loop lives in the app
+ * and a 30-second watchdog swaps instantly from the recorded
+ * results when the node in use dies twice in a row. The loop lives in the app
  * process; it resumes on the next app start while a country is active.
  */
 object NbLoadBalancer {
@@ -135,8 +135,41 @@ object NbLoadBalancer {
             Log.i(TAG, "watchdog: in-use node failed ($watchdogFails)")
             if (watchdogFails >= 2) {
                 watchdogFails = 0
-                runSpeedRound()
+                // Swap FIRST, from the recorded results, like a native
+                // urltest group does: the fastest other node the
+                // background rounds already know is reachable. The
+                // fresh race afterwards only refreshes the record.
+                failOverFromRecord(groupId, selected.id)
+                scope.launch { runSpeedRound() }
             }
+        }
+    }
+
+    /**
+     * Instant failover from the recorded test history: pick the
+     * fastest other member of the active country whose last recorded
+     * test passed, and switch to it right away. No testing happens
+     * on this path, so the swap itself takes no time.
+     */
+    private suspend fun failOverFromRecord(groupId: Long, deadId: Long) {
+        val cc = activeCountry(app) ?: return
+        val candidates = withContext(Dispatchers.IO) {
+            SagerDatabase.proxyDao.getByGroup(groupId)
+        }.filter {
+            it.id != deadId && it.status == 1 && it.ping > 0 &&
+                NbGeoStore.countryFor(app, it.requireBean()) == cc
+        }
+        val best = candidates.minByOrNull { it.ping } ?: run {
+            Log.i(TAG, "watchdog failover: no recorded alternative in $cc")
+            return
+        }
+        val previous = DataStore.selectedProxy
+        DataStore.selectedProxy = best.id
+        ProfileManager.postUpdate(previous)
+        ProfileManager.postUpdate(best.id)
+        Log.i(TAG, "watchdog failover -> ${best.requireBean().displayName()} (${best.ping}ms)")
+        if (DataStore.serviceState.canStop) {
+            SagerNet.reloadService()
         }
     }
 
