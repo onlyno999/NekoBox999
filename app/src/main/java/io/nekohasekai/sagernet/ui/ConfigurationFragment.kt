@@ -761,7 +761,15 @@ class ConfigurationFragment @JvmOverloads constructor(
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+            val allProfiles = SagerDatabase.proxyDao.getByGroup(group.id)
+            // NekoBox999: with country sections, a manual test only
+            // covers the sections currently expanded.
+            val scope = adapter.groupFragments[group.id]?.adapter?.expandedProfileIds()
+            val profilesList = if (scope.isNullOrEmpty()) {
+                allProfiles
+            } else {
+                allProfiles.filter { it.id in scope }
+            }
             test.proxyN = profilesList.size
             val profiles = ConcurrentLinkedQueue(profilesList)
             repeat(DataStore.connectionTestConcurrent) {
@@ -1136,6 +1144,15 @@ class ConfigurationFragment @JvmOverloads constructor(
             private var filtering = false
 
             fun isSectioned() = sectioned
+
+            /**
+             * Profiles currently visible under expanded country
+             * sections; null when the list is not sectioned.
+             */
+            fun expandedProfileIds(): Set<Long>? {
+                if (!sectioned) return null
+                return geoRows.filterIsInstance<GeoItem>().map { it.profileId }.toSet()
+            }
 
             private fun rebuildRows() {
                 val ctx = io.nekohasekai.sagernet.ktx.app
