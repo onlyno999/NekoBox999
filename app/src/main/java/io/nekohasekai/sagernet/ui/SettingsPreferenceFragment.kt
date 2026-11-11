@@ -78,38 +78,7 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         val enableDnsRouting = findPreference<SwitchPreference>(Key.ENABLE_DNS_ROUTING)!!
         val enableFakeDns = findPreference<SwitchPreference>(Key.ENABLE_FAKEDNS)!!
 
-        val logLevel = findPreference<LongClickListPreference>(Key.LOG_LEVEL)!!
         val mtu = findPreference<MTUPreference>(Key.MTU)!!
-        globalCustomConfig = findPreference(Key.GLOBAL_CUSTOM_CONFIG)!!
-        globalCustomConfig.useConfigStore(Key.GLOBAL_CUSTOM_CONFIG)
-
-        logLevel.dialogLayoutResource = R.layout.layout_loglevel_help
-        logLevel.setOnPreferenceChangeListener { _, _ ->
-            needRestart()
-            true
-        }
-        logLevel.setOnLongClickListener {
-            if (context == null) return@setOnLongClickListener true
-
-            val view = EditText(context).apply {
-                inputType = EditorInfo.TYPE_CLASS_NUMBER
-                var size = DataStore.logBufSize
-                if (size == 0) size = 50
-                setText(size.toString())
-            }
-
-            MaterialAlertDialogBuilder(requireContext()).setTitle("Log buffer size (kb)")
-                .setView(view)
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    DataStore.logBufSize = view.text.toString().toInt()
-                    if (DataStore.logBufSize <= 0) DataStore.logBufSize = 50
-                    needRestart()
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-            true
-        }
-
         mixedPort.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
 
         val metedNetwork = findPreference<Preference>(Key.METERED_NETWORK)!!
@@ -167,7 +136,6 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         resolveDestination.onPreferenceChangeListener = reloadListener
         tunImplementation.onPreferenceChangeListener = reloadListener
         acquireWakeLock.onPreferenceChangeListener = reloadListener
-        globalCustomConfig.onPreferenceChangeListener = reloadListener
     }
 
     override fun onResume() {
