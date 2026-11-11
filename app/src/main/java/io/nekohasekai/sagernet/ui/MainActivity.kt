@@ -116,10 +116,6 @@ class MainActivity : ThemedActivity(),
             binding.drawerLayout.removeView(binding.navView)
         }
         navigation.setNavigationItemSelectedListener(this)
-        // NekoBox999: drawer locked closed, entrance removed
-        binding.drawerLayout.setDrawerLockMode(
-            androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED
-        )
 
         if (savedInstanceState == null) {
             displayFragmentWithId(R.id.nav_configuration)
@@ -349,7 +345,37 @@ class MainActivity : ThemedActivity(),
             .show()
     }
 
+    // NekoBox999: the former toolbar overflow actions live in the drawer.
+    private fun configAction(action: (ConfigurationFragment) -> Unit) {
+        val current = supportFragmentManager.findFragmentById(R.id.fragment_holder)
+        if (current is ConfigurationFragment) {
+            action(current)
+        } else {
+            val fragment = ConfigurationFragment()
+            displayFragment(fragment)
+            supportFragmentManager.executePendingTransactions()
+            action(fragment)
+        }
+        binding.drawerLayout.closeDrawers()
+    }
+
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.nav_update_subscription -> {
+                configAction { it.nbUpdateCurrentGroup() }
+                return true
+            }
+
+            R.id.nav_url_test -> {
+                configAction { it.nbUrlTest() }
+                return true
+            }
+
+            R.id.nav_delete_unavailable -> {
+                configAction { it.nbDeleteUnavailable() }
+                return true
+            }
+        }
         if (item.isChecked) binding.drawerLayout.closeDrawers() else {
             return displayFragmentWithId(item.itemId)
         }

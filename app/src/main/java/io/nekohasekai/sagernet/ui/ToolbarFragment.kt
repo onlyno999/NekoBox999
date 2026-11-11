@@ -18,7 +18,10 @@ open class ToolbarFragment : Fragment {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         toolbar = view.findViewById(R.id.toolbar)
-        // NekoBox999: drawer entrance removed; settings lives in the toolbar menu.
+        toolbar.setNavigationIcon(R.drawable.ic_navigation_menu)
+        toolbar.setNavigationOnClickListener {
+            (activity as MainActivity).binding.drawerLayout.openDrawer(GravityCompat.START)
+        }
     }
 
     open fun onKeyDown(ketCode: Int, event: KeyEvent) = false

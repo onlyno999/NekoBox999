@@ -344,6 +344,64 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     }
 
+    // NekoBox999: drawer entry point (moved from the toolbar overflow menu).
+    fun nbUpdateCurrentGroup() {
+    val group = DataStore.currentGroup()
+    if (group.type != GroupType.SUBSCRIPTION) {
+        snackbar(R.string.group_not_subscription).show()
+        Logs.e("onMenuItemClick: Group(${group.displayName()}) is not subscription")
+    } else {
+        runOnLifecycleDispatcher {
+            GroupUpdater.startUpdate(group, true)
+        }
+    }
+    }
+
+    // NekoBox999: drawer entry point (moved from the toolbar overflow menu).
+    fun nbUrlTest() {
+    urlTest()
+    }
+
+    // NekoBox999: drawer entry point (moved from the toolbar overflow menu).
+    fun nbDeleteUnavailable() {
+    runOnDefaultDispatcher {
+        val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
+        val toClear = mutableListOf<ProxyEntity>()
+        if (profiles.isNotEmpty()) for (profile in profiles) {
+            if (profile.status != 0 && profile.status != 1) {
+                toClear.add(profile)
+            }
+        }
+        if (toClear.isNotEmpty()) {
+            onMainDispatcher {
+                MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.confirm)
+                    .setMessage(R.string.delete_confirm_prompt)
+                    .setPositiveButton(R.string.yes) { _, _ ->
+                        for (profile in toClear) {
+                            adapter.groupFragments[DataStore.selectedGroup]?.adapter?.apply {
+                                val index = configurationIdList.indexOf(profile.id)
+                                if (index >= 0) {
+                                    configurationIdList.removeAt(index)
+                                    configurationList.remove(profile.id)
+                                    notifyItemRemoved(index)
+                                }
+                            }
+                        }
+                        runOnDefaultDispatcher {
+                            for (profile in toClear) {
+                                ProfileManager.deleteProfile2(
+                                    profile.groupId, profile.id
+                                )
+                            }
+                        }
+                    }
+                    .setNegativeButton(R.string.no, null)
+                    .show()
+            }
+        }
+    }
+    }
+
     override fun onMenuItemClick(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.action_scan_qr_code -> {
@@ -446,68 +504,13 @@ class ConfigurationFragment @JvmOverloads constructor(
                 startActivity(Intent(requireActivity(), ChainSettingsActivity::class.java))
             }
 
-            R.id.action_open_settings -> {
-                (requireActivity() as MainActivity).displayFragment(SettingsFragment())
-            }
-
-            R.id.action_update_subscription -> {
-                val group = DataStore.currentGroup()
-                if (group.type != GroupType.SUBSCRIPTION) {
-                    snackbar(R.string.group_not_subscription).show()
-                    Logs.e("onMenuItemClick: Group(${group.displayName()}) is not subscription")
-                } else {
-                    runOnLifecycleDispatcher {
-                        GroupUpdater.startUpdate(group, true)
-                    }
-                }
-            }
 
 
 
-            R.id.action_connection_test_delete_unavailable -> {
-                runOnDefaultDispatcher {
-                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
-                    val toClear = mutableListOf<ProxyEntity>()
-                    if (profiles.isNotEmpty()) for (profile in profiles) {
-                        if (profile.status != 0 && profile.status != 1) {
-                            toClear.add(profile)
-                        }
-                    }
-                    if (toClear.isNotEmpty()) {
-                        onMainDispatcher {
-                            MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.confirm)
-                                .setMessage(R.string.delete_confirm_prompt)
-                                .setPositiveButton(R.string.yes) { _, _ ->
-                                    for (profile in toClear) {
-                                        adapter.groupFragments[DataStore.selectedGroup]?.adapter?.apply {
-                                            val index = configurationIdList.indexOf(profile.id)
-                                            if (index >= 0) {
-                                                configurationIdList.removeAt(index)
-                                                configurationList.remove(profile.id)
-                                                notifyItemRemoved(index)
-                                            }
-                                        }
-                                    }
-                                    runOnDefaultDispatcher {
-                                        for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
-                                                profile.groupId, profile.id
-                                            )
-                                        }
-                                    }
-                                }
-                                .setNegativeButton(R.string.no, null)
-                                .show()
-                        }
-                    }
-                }
-            }
 
 
 
-            R.id.action_connection_url_test -> {
-                urlTest()
-            }
+
         }
         return true
     }
