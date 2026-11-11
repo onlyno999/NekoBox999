@@ -1416,8 +1416,21 @@ class ConfigurationFragment @JvmOverloads constructor(
                     }
                 }
 
-                profileName.text = proxyEntity.displayName()
-                profileType.text = proxyEntity.displayType()
+                // NekoBox999: show the probed exit country on the card.
+                val nbCountry = io.nekohasekai.sagernet.auth.NbGeoStore.countryFor(
+                    view.context, proxyEntity.requireBean()
+                )
+                profileName.text = if (nbCountry != null) {
+                    io.nekohasekai.sagernet.auth.NbGeoStore.flag(nbCountry) +
+                        " " + proxyEntity.displayName()
+                } else {
+                    proxyEntity.displayName()
+                }
+                profileType.text = if (nbCountry != null) {
+                    proxyEntity.displayType() + " · " + nbCountry
+                } else {
+                    proxyEntity.displayType()
+                }
                 profileType.setTextColor(requireContext().getProtocolColor(proxyEntity.type))
 
                 var rx = proxyEntity.rx

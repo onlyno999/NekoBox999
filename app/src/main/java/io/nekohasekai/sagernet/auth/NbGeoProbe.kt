@@ -1,0 +1,207 @@
+package io.nekohasekai.sagernet.auth
+
+import android.content.Context
+import android.util.Log
+import io.nekohasekai.sagernet.bg.proto.GeoTest
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.database.GroupManager
+import io.nekohasekai.sagernet.database.ProxyEntity
+import io.nekohasekai.sagernet.database.SagerDatabase
+import io.nekohasekai.sagernet.fmt.AbstractBean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Country store + prober for NekoBox999: after a subscription sync,
+ * every profile is asked (through itself) for https://api.ip.sb/geoip,
+ * the resulting country code is kept here keyed by the same bean key
+ * the subscription sync uses to remember the selection, and the group
+ * is re-sorted so profiles sit grouped by country.
+ */
+object NbGeoStore {
+
+    private const val PREFS = "nb999_geo"
+    private const val KEY_MAP = "geo_map"
+    private const val KEY_TRY = "geo_try"
+    private const val RETRY_MS = 24 * 60 * 60_000L
+
+    @Volatile
+    private var cache: MutableMap<String, String>? = null
+
+    @Volatile
+    private var tryCache: MutableMap<String, Long>? = null
+
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun loadMap(context: Context): MutableMap<String, String> {
+        cache?.let { return it }
+        val out = mutableMapOf<String, String>()
+        val raw = prefs(context).getString(KEY_MAP, null)
+        if (raw != null) {
+            runCatching {
+                val json = JSONObject(raw)
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    out[k] = json.getString(k)
+                }
+            }
+        }
+        cache = out
+        return out
+    }
+
+    private fun loadTry(context: Context): MutableMap<String, Long> {
+        tryCache?.let { return it }
+        val out = mutableMapOf<String, Long>()
+        val raw = prefs(context).getString(KEY_TRY, null)
+        if (raw != null) {
+            runCatching {
+                val json = JSONObject(raw)
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    out[k] = json.getLong(k)
+                }
+            }
+        }
+        tryCache = out
+        return out
+    }
+
+    private fun save(context: Context) {
+        val mapJson = JSONObject()
+        loadMap(context).forEach { (k, v) -> mapJson.put(k, v) }
+        val tryJson = JSONObject()
+        loadTry(context).forEach { (k, v) -> tryJson.put(k, v) }
+        prefs(context).edit()
+            .putString(KEY_MAP, mapJson.toString())
+            .putString(KEY_TRY, tryJson.toString())
+            .apply()
+    }
+
+    fun keyOf(bean: AbstractBean): String = NbSubscriptionSync.keyOf(bean)
+
+    fun countryFor(context: Context, bean: AbstractBean): String? =
+        loadMap(context)[keyOf(bean)]
+
+    fun attemptedRecently(context: Context, bean: AbstractBean): Boolean {
+        val ts = loadTry(context)[keyOf(bean)] ?: return false
+        return System.currentTimeMillis() - ts < RETRY_MS
+    }
+
+    fun record(context: Context, bean: AbstractBean, countryCode: String?) {
+        val key = keyOf(bean)
+        loadTry(context)[key] = System.currentTimeMillis()
+        if (!countryCode.isNullOrBlank()) {
+            loadMap(context)[key] = countryCode.uppercase()
+        }
+        save(context)
+    }
+
+    /** Regional-indicator flag emoji for a 2-letter country code. */
+    fun flag(countryCode: String): String {
+        val cc = countryCode.uppercase()
+        if (cc.length != 2) return ""
+        val sb = StringBuilder()
+        for (c in cc) {
+            if (c !in 'A'..'Z') return ""
+            sb.append(Character.toChars(0x1F1E6 + (c - 'A')))
+        }
+        return sb.toString()
+    }
+}
+
+object NbGeoProbe {
+
+    private const val TAG = "NbGeo"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val running = AtomicBoolean(false)
+
+    /** Fire-and-forget probe of the managed group, then regroup by country. */
+    fun enqueue(context: Context, groupId: Long) {
+        if (!running.compareAndSet(false, true)) return
+        val appContext = context.applicationContext
+        scope.launch {
+            try {
+                probe(appContext, groupId)
+            } catch (e: Exception) {
+                Log.w(TAG, "probe failed", e)
+            } finally {
+                running.set(false)
+            }
+        }
+    }
+
+    suspend fun probe(context: Context, groupId: Long) = withContext(Dispatchers.IO) {
+        val profiles = SagerDatabase.proxyDao.getByGroup(groupId)
+        val targets = profiles.filter { profile ->
+            val bean = profile.requireBean()
+            NbGeoStore.countryFor(context, bean) == null &&
+                !NbGeoStore.attemptedRecently(context, bean)
+        }
+        if (targets.isNotEmpty()) {
+            val queue = ConcurrentLinkedQueue(targets)
+            val semaphore = Semaphore(DataStore.connectionTestConcurrent.coerceIn(1, 16))
+            val jobs = mutableListOf<kotlinx.coroutines.Job>()
+            repeat(DataStore.connectionTestConcurrent.coerceIn(1, 16)) {
+                jobs.add(launch {
+                    while (true) {
+                        val profile = queue.poll() ?: break
+                        semaphore.withPermit {
+                            val bean = profile.requireBean()
+                            val cc = runCatching {
+                                val body = GeoTest().doFetch(profile)
+                                JSONObject(body).optString("country_code")
+                                    .takeIf { it.isNotBlank() }
+                            }.getOrNull()
+                            NbGeoStore.record(context, bean, cc)
+                            Log.i(TAG, "geo ${bean.displayName()} -> ${cc ?: "?"}")
+                        }
+                    }
+                })
+            }
+            jobs.forEach { it.join() }
+        }
+        regroup(context, groupId)
+    }
+
+    /** Stable re-sort: profiles grouped by country, unknowns last. */
+    private suspend fun regroup(context: Context, groupId: Long) =
+        withContext(Dispatchers.IO) {
+            val profiles = SagerDatabase.proxyDao.getByGroup(groupId)
+            if (profiles.isEmpty()) return@withContext
+            val countries = profiles.map { NbGeoStore.countryFor(context, it.requireBean()) }
+            val counts = countries.filterNotNull().groupingBy { it }.eachCount()
+            val sorted = profiles.indices.sortedWith(
+                compareBy(
+                    { idx: Int -> if (countries[idx] == null) 1 else 0 },
+                    { idx: Int -> -(counts[countries[idx]] ?: 0) },
+                    { idx: Int -> countries[idx] ?: "" },
+                    { idx: Int -> idx },
+                )
+            )
+            val changed = mutableListOf<ProxyEntity>()
+            sorted.forEachIndexed { newOrder, oldIdx ->
+                val profile = profiles[oldIdx]
+                if (profile.userOrder != newOrder.toLong()) {
+                    profile.userOrder = newOrder.toLong()
+                    changed.add(profile)
+                }
+            }
+            if (changed.isNotEmpty()) {
+                SagerDatabase.proxyDao.updateProxy(changed)
+                GroupManager.postReload()
+                Log.i(TAG, "regrouped ${profiles.size} profiles by country")
+            }
+        }
+}

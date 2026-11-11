@@ -65,12 +65,14 @@ object NbSubscriptionSync {
                     }
                     GroupManager.postReload(group.id)
                     NbAuthManager.markSynced(app)
+                    // NekoBox999: probe node countries, then group by country.
+                    NbGeoProbe.enqueue(app, group.id)
                     Result.Ok(beans.size)
                 }
             }
         }
     }
 
-    private fun keyOf(bean: AbstractBean): String =
+    internal fun keyOf(bean: AbstractBean): String =
         "${bean.javaClass.name}|${bean.serverAddress}|${bean.serverPort}"
 }
