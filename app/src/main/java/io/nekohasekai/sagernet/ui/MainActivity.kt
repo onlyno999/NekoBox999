@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.ui
 import android.Manifest.permission.POST_NOTIFICATIONS
 import android.annotation.SuppressLint
 import android.content.Intent
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -71,7 +72,7 @@ class MainActivity : ThemedActivity(),
         if (io.nekohasekai.sagernet.auth.NbAuthManager.entryCheckDue(this) ||
             io.nekohasekai.sagernet.auth.NbAuthManager.validationDue(this)
         ) {
-            androidx.lifecycle.lifecycleScope.launch {
+            lifecycleScope.launch {
                 val r = io.nekohasekai.sagernet.auth.NbAuthManager.validateNow(this@MainActivity)
                 if (r is io.nekohasekai.sagernet.auth.NbAuthManager.Outcome.Denied) {
                     startActivity(Intent(this@MainActivity, AuthGateActivity::class.java))
