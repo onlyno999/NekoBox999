@@ -73,6 +73,10 @@
             android:configChanges="uiMode" />
 
         <activity
+            android:name="io.nekohasekai.sagernet.ui.AuthGateActivity"
+            android:exported="false" />
+
+        <activity
             android:name="io.nekohasekai.sagernet.ui.MainActivity"
             android:configChanges="uiMode"
             android:exported="true"

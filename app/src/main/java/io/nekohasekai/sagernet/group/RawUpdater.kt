@@ -47,7 +47,22 @@ object RawUpdater : GroupUpdater() {
 
         val link = subscription.link
         var proxies: List<AbstractBean>
-        if (link.startsWith("content://")) {
+        if (io.nekohasekai.sagernet.auth.NbAuthManager.isManagedLink(link)) {
+            // NekoBox999 built-in group: content comes from the
+            // licensing backend, checked per device on every pull.
+            proxies = when (val fr =
+                io.nekohasekai.sagernet.auth.NbAuthManager.fetchSubscription(app)) {
+                is io.nekohasekai.sagernet.auth.NbAuthManager.FetchOutcome.Ok ->
+                    parseRaw(fr.content)
+                        ?: error(app.getString(R.string.no_proxies_found_in_subscription))
+
+                is io.nekohasekai.sagernet.auth.NbAuthManager.FetchOutcome.Denied ->
+                    error("授权未通过（${fr.reason}），请重新打开应用激活")
+
+                io.nekohasekai.sagernet.auth.NbAuthManager.FetchOutcome.NetworkError ->
+                    error("网络错误，订阅获取失败")
+            }
+        } else if (link.startsWith("content://")) {
             val contentText = app.contentResolver.openInputStream(link.toUri())
                 ?.bufferedReader()
                 ?.readText()

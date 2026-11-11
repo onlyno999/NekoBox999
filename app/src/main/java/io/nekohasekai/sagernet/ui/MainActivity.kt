@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.ui
 import android.Manifest.permission.POST_NOTIFICATIONS
 import android.annotation.SuppressLint
 import android.content.Intent
+import kotlinx.coroutines.launch
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -60,6 +61,24 @@ class MainActivity : ThemedActivity(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // NekoBox999: startup license gate (ported from v2one999).
+        if (!io.nekohasekai.sagernet.auth.NbAuthManager.hasLiveSession(this)) {
+            startActivity(Intent(this, AuthGateActivity::class.java))
+            finish()
+            return
+        }
+        if (io.nekohasekai.sagernet.auth.NbAuthManager.entryCheckDue(this) ||
+            io.nekohasekai.sagernet.auth.NbAuthManager.validationDue(this)
+        ) {
+            androidx.lifecycle.lifecycleScope.launch {
+                val r = io.nekohasekai.sagernet.auth.NbAuthManager.validateNow(this@MainActivity)
+                if (r is io.nekohasekai.sagernet.auth.NbAuthManager.Outcome.Denied) {
+                    startActivity(Intent(this@MainActivity, AuthGateActivity::class.java))
+                    finish()
+                }
+            }
+        }
 
         binding = LayoutMainBinding.inflate(layoutInflater)
         binding.fab.initProgress(binding.fabProgress)
