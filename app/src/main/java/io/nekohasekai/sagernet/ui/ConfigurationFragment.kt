@@ -39,6 +39,8 @@ import com.google.android.material.tabs.TabLayoutMediator
 import io.nekohasekai.sagernet.GroupOrder
 import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.Key
+import io.nekohasekai.sagernet.auth.NbLoadBalancer
+import android.widget.Toast
 import io.nekohasekai.sagernet.auth.NbGeoProbe
 import io.nekohasekai.sagernet.auth.NbGeoStore
 import io.nekohasekai.sagernet.R
@@ -1601,6 +1603,22 @@ class ConfigurationFragment @JvmOverloads constructor(
                     }
                 } else {
                     view.setOnClickListener {
+                        // Auto country armed: nodes in the auto
+                        // section belong to the balancer. Manual
+                        // selection requires turning auto off first.
+                        NbLoadBalancer.activeCountry(view.context)?.let { cc ->
+                            if (NbGeoStore.countryFor(
+                                    view.context, proxyEntity.requireBean()
+                                ) == cc
+                            ) {
+                                Toast.makeText(
+                                    view.context,
+                                    "自动中：先关掉自动才能手动选节点",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                return@setOnClickListener
+                            }
+                        }
                         runOnDefaultDispatcher {
                             var update: Boolean
                             var lastSelected: Long
