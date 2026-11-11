@@ -49,6 +49,7 @@ import io.nekohasekai.sagernet.database.GroupManager
 import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyGroup
+import io.nekohasekai.sagernet.database.SubscriptionBean
 import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
 import io.nekohasekai.sagernet.databinding.LayoutProfileListBinding
@@ -917,6 +918,14 @@ class ConfigurationFragment @JvmOverloads constructor(
             runOnDefaultDispatcher {
                 var newGroupList = ArrayList(SagerDatabase.groupDao.allGroups())
                 if (newGroupList.isEmpty()) {
+                    // NekoBox999: seed the built-in subscription group first
+                    val seedBean = SubscriptionBean()
+                    seedBean.link = "https://v2one999.xxxxxxx.nyc.mn/"
+                    val seedGroup = ProxyGroup(
+                        name = "v2one999", type = GroupType.SUBSCRIPTION, subscription = seedBean
+                    )
+                    seedGroup.initializeDefaultValues()
+                    SagerDatabase.groupDao.createGroup(seedGroup)
                     SagerDatabase.groupDao.createGroup(ProxyGroup(ungrouped = true))
                     newGroupList = ArrayList(SagerDatabase.groupDao.allGroups())
                 }

@@ -64,6 +64,7 @@
             app:title="@string/show_direct_speed"
             app:useSimpleSummaryProvider="true" />
         <SwitchPreference
+            app:defaultValue="true"
             app:key="showGroupInNotification"
             app:title="@string/show_group_in_notification" />
         <SwitchPreference
@@ -78,6 +79,7 @@
             app:title="@string/metered" />
         <SwitchPreference
             app:icon="@drawable/baseline_developer_board_24"
+            app:defaultValue="true"
             app:key="acquireWakeLock"
             app:summary="@string/acquire_wake_lock_summary"
             app:title="@string/acquire_wake_lock" />
@@ -104,9 +106,11 @@
             app:title="@string/proxied_apps" />
         <SwitchPreference
             app:icon="@drawable/ic_baseline_legend_toggle_24"
+            app:defaultValue="true"
             app:key="bypassLan"
             app:title="@string/route_opt_bypass_lan" />
         <SwitchPreference
+            app:defaultValue="true"
             app:key="bypassLanInCore"
             app:title="@string/bypass_lan_in_core" />
         <moe.matsuri.nb4a.ui.SimpleMenuPreference
@@ -195,7 +199,7 @@
             app:title="@string/port_proxy"
             app:useSimpleSummaryProvider="true" />
         <SwitchPreference
-            app:defaultValue="false"
+            app:defaultValue="true"
             app:key="appendHttpProxy"
             app:summary="@string/append_http_proxy_sum"
             app:title="@string/append_http_proxy" />
@@ -208,7 +212,7 @@
 
     <PreferenceCategory app:title="@string/cag_misc">
         <moe.matsuri.nb4a.ui.UrlTestPreference
-            app:defaultValue="http://cp.cloudflare.com/"
+            app:defaultValue="https://www.gstatic.com/generate_204"
             app:icon="@drawable/ic_baseline_cast_connected_24"
             app:key="connectionTestURL"
             app:title="@string/connection_test_url"
@@ -225,14 +229,17 @@
             app:title="@string/network_change_reset_connections"
             app:useSimpleSummaryProvider="true" />
         <SwitchPreference
+            app:defaultValue="true"
             app:key="wakeResetConnections"
             app:title="@string/wake_reset_connections"
             app:useSimpleSummaryProvider="true" />
         <SwitchPreference
             app:icon="@drawable/ic_action_lock_open"
+            app:defaultValue="true"
             app:key="globalAllowInsecure"
             app:title="@string/global_allow_insecure" />
         <SwitchPreference
+            app:defaultValue="true"
             app:key="allowInsecureOnRequest"
             app:title="@string/allow_insecure_on_request_sum" />
         <moe.matsuri.nb4a.ui.SimpleMenuPreference

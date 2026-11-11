@@ -88,9 +88,9 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var enableClashAPI by configurationStore.boolean(Key.ENABLE_CLASH_API)
     var showBottomBar by configurationStore.boolean(Key.SHOW_BOTTOM_BAR)
 
-    var allowInsecureOnRequest by configurationStore.boolean(Key.ALLOW_INSECURE_ON_REQUEST)
+    var allowInsecureOnRequest by configurationStore.boolean(Key.ALLOW_INSECURE_ON_REQUEST) { true }
     var networkChangeResetConnections by configurationStore.boolean(Key.NETWORK_CHANGE_RESET_CONNECTIONS) { true }
-    var wakeResetConnections by configurationStore.boolean(Key.WAKE_RESET_CONNECTIONS)
+    var wakeResetConnections by configurationStore.boolean(Key.WAKE_RESET_CONNECTIONS) { true }
 
     //
 
@@ -108,7 +108,7 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var bypassLanInCore by configurationStore.boolean(Key.BYPASS_LAN_IN_CORE) { true }
 
     var allowAccess by configurationStore.boolean(Key.ALLOW_ACCESS)
-    var speedInterval by configurationStore.stringToInt(Key.SPEED_INTERVAL) { 1 }
+    var speedInterval by configurationStore.stringToInt(Key.SPEED_INTERVAL) { 1000 }
     var showGroupInNotification by configurationStore.boolean("showGroupInNotification") { true }
 
     var globalCustomConfig by configurationStore.string(Key.GLOBAL_CUSTOM_CONFIG) { "" }
@@ -166,7 +166,7 @@ object DataStore : OnPreferenceDataStoreChangeListener {
 
     // protocol
 
-    var globalAllowInsecure by configurationStore.boolean(Key.GLOBAL_ALLOW_INSECURE) { false }
+    var globalAllowInsecure by configurationStore.boolean(Key.GLOBAL_ALLOW_INSECURE) { true }
 
     // old cache, DO NOT ADD
 
