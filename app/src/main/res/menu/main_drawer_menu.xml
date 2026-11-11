@@ -32,11 +32,6 @@
             android:title="@string/update_current_subscription" />
 
         <item
-            android:id="@+id/nav_url_test"
-            android:icon="@drawable/ic_baseline_speed_24"
-            android:title="@string/connection_test_url_test" />
-
-        <item
             android:id="@+id/nav_delete_unavailable"
             android:icon="@drawable/baseline_delete_sweep_24"
             android:title="@string/connection_test_delete_unavailable" />
@@ -49,6 +44,13 @@
             android:id="@+id/nav_traffic"
             android:icon="@drawable/ic_baseline_transform_24"
             android:title="@string/menu_dashboard" />
+    </group>
+
+    <group>
+        <item
+            android:id="@+id/nav_url_test"
+            android:icon="@drawable/ic_baseline_speed_24"
+            android:title="@string/connection_test_url_test" />
     </group>
 
 </menu>
