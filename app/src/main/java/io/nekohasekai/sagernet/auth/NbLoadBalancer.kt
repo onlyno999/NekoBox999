@@ -41,6 +41,9 @@ object NbLoadBalancer {
     private val roundRunning = AtomicBoolean(false)
 
     @Volatile
+    private var roundDone: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
+    @Volatile
     private var loopJob: Job? = null
 
     fun activeCountry(context: Context): String? =
@@ -81,6 +84,8 @@ object NbLoadBalancer {
 
     suspend fun runRound() {
         if (!roundRunning.compareAndSet(false, true)) return
+        val doneSignal = kotlinx.coroutines.CompletableDeferred<Unit>()
+        roundDone = doneSignal
         try {
             val cc = activeCountry(app) ?: return
             val groupId = managedGroupId() ?: return
@@ -129,6 +134,48 @@ object NbLoadBalancer {
             Log.w(TAG, "round failed", e)
         } finally {
             roundRunning.set(false)
+            doneSignal.complete(Unit)
+        }
+    }
+
+    /**
+     * Connect-time pick: if a round is already running (tapping the
+     * section's auto switch starts one), wait for it instead of
+     * no-oping; otherwise run a round now. Afterwards, guarantee the
+     * selection sits inside the active country: when verification
+     * left nothing selected, fall back to that country's best known
+     * node so the connect button never dead-ends on the stock
+     * "please select a server" message.
+     */
+    suspend fun pickForConnect() {
+        val signal = roundDone
+        if (roundRunning.get() && signal != null && !signal.isCompleted) {
+            signal.await()
+        } else {
+            runRound()
+        }
+        val cc = activeCountry(app) ?: return
+        val groupId = managedGroupId() ?: return
+        val profiles = withContext(Dispatchers.IO) {
+            SagerDatabase.proxyDao.getByGroup(groupId)
+        }
+        val current = profiles.firstOrNull { it.id == DataStore.selectedProxy }
+        if (current != null &&
+            NbGeoStore.countryFor(app, current.requireBean()) == cc
+        ) {
+            return
+        }
+        val inCountry = profiles.filter {
+            NbGeoStore.countryFor(app, it.requireBean()) == cc
+        }
+        val fallback = inCountry.filter { it.status == 1 }.minByOrNull { it.ping }
+            ?: inCountry.minByOrNull { it.ping }
+        if (fallback != null) {
+            val previous = DataStore.selectedProxy
+            DataStore.selectedProxy = fallback.id
+            ProfileManager.postUpdate(previous)
+            ProfileManager.postUpdate(fallback.id)
+            Log.i(TAG, "connect fallback -> ${fallback.requireBean().displayName()}")
         }
     }
 
@@ -142,8 +189,7 @@ object NbLoadBalancer {
         val actual = runCatching {
             GeoTest().doFetchCountry(profile)
         }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
-        if (actual == null) return false
-        if (actual != cc) {
+        if (actual != null && actual != cc) {
             NbGeoStore.record(app, profile.requireBean(), actual)
             return false
         }
