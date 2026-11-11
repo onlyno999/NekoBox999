@@ -69,6 +69,22 @@ class MainActivity : ThemedActivity(),
             finish()
             return
         }
+        // NekoBox999: silent subscription auto-update on open —
+        // first open always, then at most once every 12 hours.
+        lifecycleScope.launch {
+            val group = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.nekohasekai.sagernet.database.SagerDatabase.groupDao.allGroups().firstOrNull {
+                    it.type == io.nekohasekai.sagernet.GroupType.SUBSCRIPTION &&
+                        io.nekohasekai.sagernet.auth.NbAuthManager.isManagedLink(it.subscription?.link)
+                }
+            }
+            if (group != null) {
+                val last = io.nekohasekai.sagernet.auth.NbAuthManager.lastSyncMs(this@MainActivity)
+                if (last <= 0L || System.currentTimeMillis() - last >= 12 * 60 * 60_000L) {
+                    io.nekohasekai.sagernet.auth.NbSubscriptionSync.sync(group)
+                }
+            }
+        }
         if (io.nekohasekai.sagernet.auth.NbAuthManager.entryCheckDue(this) ||
             io.nekohasekai.sagernet.auth.NbAuthManager.validationDue(this)
         ) {
@@ -357,7 +373,6 @@ class MainActivity : ThemedActivity(),
             R.id.nav_route -> displayFragment(RouteFragment())
             R.id.nav_settings -> displayFragment(SettingsFragment())
             R.id.nav_traffic -> displayFragment(WebviewFragment())
-            R.id.nav_logcat -> displayFragment(LogcatFragment())
             else -> return false
         }
         navigation.menu.findItem(id).isChecked = true

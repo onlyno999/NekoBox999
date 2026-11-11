@@ -47,6 +47,7 @@ object NbAuthManager {
     private const val KEY_PRIV = "pref_online_privkey"
     private const val KEY_PUB = "pref_online_pubkey"
     private const val KEY_FALLBACK_ID = "pref_fallback_android_id"
+    private const val KEY_LAST_SYNC_MS = "pref_last_sync_ms"
 
     /** The built-in subscription group is managed when its link is the base address. */
     fun isManagedLink(link: String?): Boolean {
@@ -94,6 +95,13 @@ object NbAuthManager {
 
     private fun putLong(context: Context, key: String, value: Long) {
         prefs(context).edit().putLong(key, value).apply()
+    }
+
+    /** Epoch ms of the last successful built-in subscription sync; 0 = never. */
+    fun lastSyncMs(context: Context): Long = getLong(context, KEY_LAST_SYNC_MS, 0L)
+
+    fun markSynced(context: Context) {
+        putLong(context, KEY_LAST_SYNC_MS, System.currentTimeMillis())
     }
 
     // ---------- machine code (same format as the v2one999 client) ----------

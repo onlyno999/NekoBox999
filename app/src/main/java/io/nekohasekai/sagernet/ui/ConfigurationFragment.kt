@@ -924,6 +924,8 @@ class ConfigurationFragment @JvmOverloads constructor(
                     val seedGroup = ProxyGroup(
                         name = "v2one999", type = GroupType.SUBSCRIPTION, subscription = seedBean
                     )
+                    seedBean.autoUpdate = true
+                    seedBean.autoUpdateDelay = 720
                     seedGroup.initializeDefaultValues()
                     SagerDatabase.groupDao.createGroup(seedGroup)
                     SagerDatabase.groupDao.createGroup(ProxyGroup(ungrouped = true))
@@ -1609,7 +1611,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
 
                 val selectOrChain = select || proxyEntity.type == ProxyEntity.TYPE_CHAIN
-                shareLayout.isGone = selectOrChain
+                shareLayout.isGone = true // NekoBox999: node cards have no share button
                 editButton.isGone = true // NekoBox999: node cards have no edit button
                 removeButton.isGone = select
 

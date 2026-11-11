@@ -64,6 +64,7 @@ object NbSubscriptionSync {
                         DataStore.selectedProxy = newSelected
                     }
                     GroupManager.postReload(group.id)
+                    NbAuthManager.markSynced(app)
                     Result.Ok(beans.size)
                 }
             }
