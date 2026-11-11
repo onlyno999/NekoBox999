@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.auth
 import android.content.Context
 import android.util.Log
 import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.bg.proto.GeoTest
 import io.nekohasekai.sagernet.bg.proto.UrlTest
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProfileManager
@@ -17,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -91,19 +93,22 @@ object NbLoadBalancer {
             Log.i(TAG, "round for $cc over ${profiles.size} profiles")
 
             val queue = ConcurrentLinkedQueue(profiles)
+            val eligible = ConcurrentLinkedQueue<ProxyEntity>()
             val workers = mutableListOf<Job>()
             val concurrent = DataStore.connectionTestConcurrent.coerceIn(1, 16)
             repeat(concurrent) {
                 workers.add(scope.launch {
                     while (true) {
                         val profile = queue.poll() ?: break
-                        testOne(profile)
+                        if (verifyAndTest(profile, cc)) {
+                            eligible.add(profile)
+                        }
                     }
                 })
             }
             workers.forEach { it.join() }
 
-            val best = profiles.filter { it.status == 1 }.minByOrNull { it.ping }
+            val best = eligible.minByOrNull { it.ping }
             if (best == null) {
                 Log.i(TAG, "round for $cc: nothing reachable")
                 return
@@ -127,15 +132,32 @@ object NbLoadBalancer {
         }
     }
 
-    private suspend fun testOne(profile: ProxyEntity) {
-        try {
+    /**
+     * Verify-then-test one candidate: the node must first prove,
+     * through its own exit, that it still sits in the target country;
+     * only then does it enter the latency race. A node whose exit
+     * moved countries is re-filed under its real country and skipped.
+     */
+    private suspend fun verifyAndTest(profile: ProxyEntity, cc: String): Boolean {
+        val actual = runCatching {
+            JSONObject(GeoTest().doFetch(profile)).optString("country_code")
+        }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
+        if (actual == null) return false
+        if (actual != cc) {
+            NbGeoStore.record(app, profile.requireBean(), actual)
+            return false
+        }
+        return try {
             val result = UrlTest().doTest(profile)
             profile.status = 1
             profile.ping = result
+            ProfileManager.updateProfile(profile)
+            true
         } catch (e: Exception) {
             profile.status = 3
             profile.error = e.message
+            ProfileManager.updateProfile(profile)
+            false
         }
-        ProfileManager.updateProfile(profile)
     }
 }
