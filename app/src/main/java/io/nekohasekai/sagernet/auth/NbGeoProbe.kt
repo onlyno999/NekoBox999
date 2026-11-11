@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Country store + prober for NekoBox999: after a subscription sync,
- * every profile is asked (through itself) for https://api.ip.sb/geoip,
+ * every profile is asked (through itself) for https://cp.cloudflare.com/cdn-cgi/trace,
  * the resulting country code is kept here keyed by the same bean key
  * the subscription sync uses to remember the selection, and the group
  * is re-sorted so profiles sit grouped by country.
