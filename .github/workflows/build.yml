@@ -75,8 +75,25 @@ jobs:
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/25.0.8775105" >> local.properties
           ./run init action gradle
-          ./gradlew app:assembleOssRelease
+          ./gradlew app:assembleOssRelease app:assembleFdroidRelease
+      - name: Gradle Build (play variant)
+        continue-on-error: true
+        env:
+          BUILD_PLUGIN: none
+          KEYSTORE_PASS: ${{ secrets.SIGNING_PASS }}
+          ALIAS_NAME: personal
+          ALIAS_PASS: ${{ secrets.SIGNING_PASS }}
+        run: ./gradlew app:assemblePlayRelease
+      - name: Gradle Build (preview variant)
+        continue-on-error: true
+        env:
+          BUILD_PLUGIN: none
+          KEYSTORE_PASS: ${{ secrets.SIGNING_PASS }}
+          ALIAS_NAME: personal
+          ALIAS_PASS: ${{ secrets.SIGNING_PASS }}
+        run: ./gradlew app:assemblePreviewRelease
       - name: Publish APKs to release
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
