@@ -31,7 +31,7 @@ object Theme {
     const val BLUE_GREY = 20
     const val BLACK = 21
 
-    private fun defaultTheme() = PINK_SSR
+    private fun defaultTheme() = BLACK
 
     fun apply(context: Context) {
         context.setTheme(getTheme())
@@ -42,11 +42,13 @@ object Theme {
     }
 
     fun getTheme(): Int {
-        return getTheme(DataStore.appTheme)
+        // NekoBox999: fixed black theme
+        return getTheme(BLACK)
     }
 
     fun getDialogTheme(): Int {
-        return getDialogTheme(DataStore.appTheme)
+        // NekoBox999: fixed black theme
+        return getDialogTheme(BLACK)
     }
 
     fun getTheme(theme: Int): Int {
