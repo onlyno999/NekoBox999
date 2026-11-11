@@ -1483,6 +1483,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             val shareLayout: LinearLayout = view.findViewById(R.id.share)
             val shareLayer: LinearLayout = view.findViewById(R.id.share_layer)
             val shareButton: ImageView = view.findViewById(R.id.shareIcon)
+            val editButton: ImageView = view.findViewById(R.id.edit)
             val removeButton: ImageView = view.findViewById(R.id.remove)
 
             fun bind(proxyEntity: ProxyEntity, trafficData: TrafficData? = null) {
@@ -1600,6 +1601,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                 val selectOrChain = select || proxyEntity.type == ProxyEntity.TYPE_CHAIN
                 shareLayout.isGone = selectOrChain
+                editButton.isGone = true // NekoBox999: node cards have no edit button
                 removeButton.isGone = select
 
                 proxyEntity.nekoBean?.apply {
