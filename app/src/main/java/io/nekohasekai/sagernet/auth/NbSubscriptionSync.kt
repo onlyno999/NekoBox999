@@ -29,7 +29,6 @@ object NbSubscriptionSync {
         val selectedId = DataStore.selectedProxy
         val selectedKey = try {
             SagerDatabase.proxyDao.getById(selectedId)
-                ?.takeIf { it.groupId == group.id }
                 ?.requireBean()
                 ?.let { keyOf(it) }
         } catch (e: Exception) {
@@ -52,6 +51,19 @@ object NbSubscriptionSync {
                 if (beans.isNullOrEmpty()) {
                     Result.Failed("订阅内容解析不出节点")
                 } else {
+                    // The selected node may currently live in one of the
+                    // auto country groups; wipe those too, the probe
+                    // rebuilds them after this sync.
+                    val tracked = NbGeoStore.trackedGroupNames(app)
+                    if (tracked.isNotEmpty()) {
+                        val all = SagerDatabase.groupDao.allGroups()
+                        for (name in tracked) {
+                            all.firstOrNull { it.name == name }?.let {
+                                GroupManager.deleteGroup(it.id)
+                            }
+                        }
+                        NbGeoStore.clearTrackedGroupNames(app)
+                    }
                     SagerDatabase.proxyDao.deleteByGroup(group.id)
                     var newSelected = 0L
                     for (bean in beans) {

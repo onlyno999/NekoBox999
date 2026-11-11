@@ -108,6 +108,37 @@ object NbGeoStore {
         save(context)
     }
 
+    private const val KEY_GROUPS = "geo_groups"
+
+    fun trackedGroupNames(context: Context): Set<String> {
+        val raw = prefs(context).getString(KEY_GROUPS, null) ?: return emptySet()
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    fun recordGroupName(context: Context, name: String) {
+        val names = trackedGroupNames(context) + name
+        val arr = org.json.JSONArray()
+        names.forEach { arr.put(it) }
+        prefs(context).edit().putString(KEY_GROUPS, arr.toString()).apply()
+    }
+
+    fun clearTrackedGroupNames(context: Context) {
+        prefs(context).edit().remove(KEY_GROUPS).apply()
+    }
+
+    /** Display name for a country group tab, e.g. "🇺🇸 美国". */
+    fun countryGroupName(countryCode: String): String {
+        val cc = countryCode.uppercase()
+        val cn = runCatching {
+            java.util.Locale("", cc).getDisplayCountry(java.util.Locale.CHINESE)
+        }.getOrNull()?.takeIf { it.isNotBlank() && it != cc } ?: cc
+        val flag = flag(cc)
+        return if (flag.isEmpty()) cn else "$flag $cn"
+    }
+
     /** Regional-indicator flag emoji for a 2-letter country code. */
     fun flag(countryCode: String): String {
         val cc = countryCode.uppercase()
@@ -172,36 +203,42 @@ object NbGeoProbe {
             }
             jobs.forEach { it.join() }
         }
-        regroup(context, groupId)
+        distribute(context, groupId)
     }
 
-    /** Stable re-sort: profiles grouped by country, unknowns last. */
-    private suspend fun regroup(context: Context, groupId: Long) =
+    /**
+     * Move every profile whose country is known out of the source
+     * group into its country group (created on demand, e.g.
+     * "🇺🇸 美国"); unknown/unreachable nodes stay in the source group.
+     */
+    private suspend fun distribute(context: Context, sourceGroupId: Long) =
         withContext(Dispatchers.IO) {
-            val profiles = SagerDatabase.proxyDao.getByGroup(groupId)
+            val profiles = SagerDatabase.proxyDao.getByGroup(sourceGroupId)
             if (profiles.isEmpty()) return@withContext
-            val countries = profiles.map { NbGeoStore.countryFor(context, it.requireBean()) }
-            val counts = countries.filterNotNull().groupingBy { it }.eachCount()
-            val sorted = profiles.indices.sortedWith(
-                compareBy(
-                    { idx: Int -> if (countries[idx] == null) 1 else 0 },
-                    { idx: Int -> -(counts[countries[idx]] ?: 0) },
-                    { idx: Int -> countries[idx] ?: "" },
-                    { idx: Int -> idx },
-                )
-            )
-            val changed = mutableListOf<ProxyEntity>()
-            sorted.forEachIndexed { newOrder, oldIdx ->
-                val profile = profiles[oldIdx]
-                if (profile.userOrder != newOrder.toLong()) {
-                    profile.userOrder = newOrder.toLong()
-                    changed.add(profile)
-                }
+            val byCountry = profiles.groupBy {
+                NbGeoStore.countryFor(context, it.requireBean())
             }
-            if (changed.isNotEmpty()) {
-                SagerDatabase.proxyDao.updateProxy(changed)
+            var moved = 0
+            for ((cc, members) in byCountry) {
+                if (cc == null) continue
+                val name = NbGeoStore.countryGroupName(cc)
+                val existing = SagerDatabase.groupDao.allGroups()
+                    .firstOrNull { it.name == name }
+                val target = existing ?: GroupManager.createGroup(
+                    io.nekohasekai.sagernet.database.ProxyGroup(name = name)
+                )
+                NbGeoStore.recordGroupName(context, name)
+                members.forEachIndexed { index, profile ->
+                    profile.groupId = target.id
+                    profile.userOrder = index.toLong()
+                }
+                SagerDatabase.proxyDao.updateProxy(members)
+                moved += members.size
+            }
+            if (moved > 0) {
                 GroupManager.postReload()
-                Log.i(TAG, "regrouped ${profiles.size} profiles by country")
+                Log.i(TAG, "distributed $moved profiles into country groups")
             }
         }
+
 }
