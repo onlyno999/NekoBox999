@@ -188,7 +188,11 @@ object NbGeoProbe {
      * box instances at a time, and the whole phase yields the moment
      * the user starts a manual connection test.
      */
-    suspend fun probeProfiles(context: Context, targets: List<ProxyEntity>) =
+    suspend fun probeProfiles(
+        context: Context,
+        targets: List<ProxyEntity>,
+        onProbed: (() -> Unit)? = null,
+    ) =
         withContext(Dispatchers.IO) {
             if (targets.isEmpty()) return@withContext
             val queue = ConcurrentLinkedQueue(targets)
@@ -205,6 +209,7 @@ object NbGeoProbe {
                                 .takeIf { it.isNotBlank() }
                         }.getOrNull()
                         NbGeoStore.record(context, bean, cc)
+                        onProbed?.let { runCatching { it() } }
                         Log.i(TAG, "geo ${bean.displayName()} -> ${cc ?: "?"}")
                     }
                 })
