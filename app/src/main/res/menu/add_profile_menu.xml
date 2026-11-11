@@ -93,10 +93,7 @@
                                                 <item
                 android:id="@+id/action_connection_url_test"
                 android:title="@string/connection_test_url_test" />
-            <item
-                android:id="@+id/action_connection_test_clear_results"
-                android:title="@string/connection_test_clear_results" />
-            <item
+                        <item
                 android:id="@+id/action_connection_test_delete_unavailable"
                 android:title="@string/connection_test_delete_unavailable" />
             <item
