@@ -1480,7 +1480,6 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             val trafficText: TextView = view.findViewById(R.id.traffic_text)
             val selectedView: LinearLayout = view.findViewById(R.id.selected_view)
-            val editButton: ImageView = view.findViewById(R.id.edit)
             val shareLayout: LinearLayout = view.findViewById(R.id.share)
             val shareLayer: LinearLayout = view.findViewById(R.id.share_layer)
             val shareButton: ImageView = view.findViewById(R.id.shareIcon)
@@ -1591,14 +1590,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                     profileStatus.setOnClickListener(null)
                 }
 
-                editButton.setOnClickListener {
-                    it.context.startActivity(
-                        proxyEntity.settingIntent(
-                            it.context, proxyGroup.type == GroupType.SUBSCRIPTION
-                        )
-                    )
-                }
-
                 removeButton.setOnClickListener {
                     adapter?.let {
                         val index = it.configurationIdList.indexOf(proxyEntity.id)
@@ -1609,7 +1600,6 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                 val selectOrChain = select || proxyEntity.type == ProxyEntity.TYPE_CHAIN
                 shareLayout.isGone = selectOrChain
-                editButton.isGone = select
                 removeButton.isGone = select
 
                 proxyEntity.nekoBean?.apply {
@@ -1621,7 +1611,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                     val started =
                         selected && DataStore.serviceState.started && DataStore.currentProfile == proxyEntity.id
                     onMainDispatcher {
-                        editButton.isEnabled = !started
                         removeButton.isEnabled = !started
                         selectedView.visibility = if (selected) View.VISIBLE else View.INVISIBLE
                     }
