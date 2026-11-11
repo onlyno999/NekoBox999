@@ -139,6 +139,18 @@ abstract class GroupUpdater {
                 val connected = DataStore.serviceState.connected
                 val userInterface = GroupManager.userInterface
 
+                // NekoBox999 built-in group: wholesale sync from the
+                // licensing backend instead of the generic updater.
+                if (io.nekohasekai.sagernet.auth.NbAuthManager.isManagedLink(subscription.link)) {
+                    val r = io.nekohasekai.sagernet.auth.NbSubscriptionSync.sync(proxyGroup)
+                    finishUpdate(proxyGroup)
+                    if (r is io.nekohasekai.sagernet.auth.NbSubscriptionSync.Result.Failed) {
+                        userInterface?.onUpdateFailure(proxyGroup, r.reason)
+                        return@coroutineScope false
+                    }
+                    return@coroutineScope true
+                }
+
                 if (byUser && (subscription.link?.startsWith("http://") == true || subscription.updateWhenConnectedOnly) && !connected) {
                     if (userInterface == null || !userInterface.confirm(app.getString(R.string.update_subscription_warning))) {
                         finishUpdate(proxyGroup)

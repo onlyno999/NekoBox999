@@ -15,7 +15,8 @@ import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.auth.NbAuthManager
 import io.nekohasekai.sagernet.database.SagerDatabase
-import io.nekohasekai.sagernet.group.GroupUpdater
+import io.nekohasekai.sagernet.auth.NbSubscriptionSync
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -108,19 +109,20 @@ class AuthGateActivity : AppCompatActivity() {
 
     private suspend fun enterApp() {
         setBusy(true, "授权通过，正在获取订阅…")
-        try {
-            val group = withContext(Dispatchers.IO) {
-                SagerDatabase.groupDao.allGroups().firstOrNull {
-                    it.type == GroupType.SUBSCRIPTION &&
-                        NbAuthManager.isManagedLink(it.subscription?.link)
-                }
+        val group = withContext(Dispatchers.IO) {
+            SagerDatabase.groupDao.allGroups().firstOrNull {
+                it.type == GroupType.SUBSCRIPTION &&
+                    NbAuthManager.isManagedLink(it.subscription?.link)
             }
-            if (group != null) {
-                GroupUpdater.executeUpdate(group, true)
+        }
+        if (group != null) {
+            when (val r = NbSubscriptionSync.sync(group)) {
+                is NbSubscriptionSync.Result.Ok ->
+                    setBusy(true, "订阅已下发：${r.count} 个节点，正在进入…")
+                is NbSubscriptionSync.Result.Failed ->
+                    setBusy(true, "订阅没拉下来：${r.reason}。先进应用，可在分组里再点更新订阅。")
             }
-        } catch (e: Exception) {
-            // Subscription refresh is best-effort here; the user can
-            // update again from the main screen.
+            delay(900)
         }
         startActivity(Intent(this, MainActivity::class.java))
         finish()
