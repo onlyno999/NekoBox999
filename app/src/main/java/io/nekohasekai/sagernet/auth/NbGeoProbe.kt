@@ -156,7 +156,7 @@ object NbGeoProbe {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val running = AtomicBoolean(false)
 
-    /** Fire-and-forget probe of the managed group, then regroup by country. */
+    /** Fire-and-forget geo probe of the managed group. */
     fun enqueue(context: Context, groupId: Long) {
         if (!running.compareAndSet(false, true)) return
         val appContext = context.applicationContext
@@ -178,33 +178,38 @@ object NbGeoProbe {
             NbGeoStore.countryFor(context, bean) == null &&
                 !NbGeoStore.attemptedRecently(context, bean)
         }
-        if (targets.isNotEmpty()) {
+        probeProfiles(context, targets)
+        // Sections are rendered from the country store; just reload the list.
+        GroupManager.postReload(groupId)
+    }
+
+    /**
+     * Probe the given profiles' exit countries, gently: at most two
+     * box instances at a time, and the whole phase yields the moment
+     * the user starts a manual connection test.
+     */
+    suspend fun probeProfiles(context: Context, targets: List<ProxyEntity>) =
+        withContext(Dispatchers.IO) {
+            if (targets.isEmpty()) return@withContext
             val queue = ConcurrentLinkedQueue(targets)
-            val semaphore = Semaphore(DataStore.connectionTestConcurrent.coerceIn(1, 16))
             val jobs = mutableListOf<kotlinx.coroutines.Job>()
-            repeat(DataStore.connectionTestConcurrent.coerceIn(1, 16)) {
+            repeat(2) {
                 jobs.add(launch {
                     while (true) {
+                        if (DataStore.runningTest) break
                         val profile = queue.poll() ?: break
-                        semaphore.withPermit {
-                            val bean = profile.requireBean()
-                            val cc = runCatching {
-                                val body = GeoTest().doFetch(profile)
-                                JSONObject(body).optString("country_code")
-                                    .takeIf { it.isNotBlank() }
-                            }.getOrNull()
-                            NbGeoStore.record(context, bean, cc)
-                            Log.i(TAG, "geo ${bean.displayName()} -> ${cc ?: "?"}")
-                        }
+                        val bean = profile.requireBean()
+                        val cc = runCatching {
+                            val body = GeoTest().doFetch(profile)
+                            JSONObject(body).optString("country_code")
+                                .takeIf { it.isNotBlank() }
+                        }.getOrNull()
+                        NbGeoStore.record(context, bean, cc)
+                        Log.i(TAG, "geo ${bean.displayName()} -> ${cc ?: "?"}")
                     }
                 })
             }
             jobs.forEach { it.join() }
         }
-        // Sections are rendered from the country store; just reload the list.
-        GroupManager.postReload(groupId)
-    }
-
-
 
 }

@@ -92,7 +92,7 @@ class MainActivity : ThemedActivity(),
                     } == true
                 }
             if (managed != null) {
-                io.nekohasekai.sagernet.auth.NbGeoProbe.enqueue(this@MainActivity, managed.id)
+                io.nekohasekai.sagernet.auth.NbNodePipeline.enqueue(this@MainActivity, managed.id)
             }
         }
         // NekoBox999: geo route assets auto-update (first open, then daily).
