@@ -170,44 +170,38 @@ object NbLoadBalancer {
     }
 
     /**
-     * Connect-time pick: if a round is already running (tapping the
-     * section's auto switch starts one), wait for it instead of
-     * no-oping; otherwise run a round now. Afterwards, guarantee the
-     * selection sits inside the active country: when verification
-     * left nothing selected, fall back to that country's best known
-     * node so the connect button never dead-ends on the stock
-     * "please select a server" message.
+     * Connect-time pick: do NOT wait for a fresh round. The round
+     * that started when the user switched the country to auto has
+     * already measured everyone, so connect immediately to the
+     * best known node of the active country, then let a background
+     * round refresh regions and speeds (it switches over if it
+     * finds something better).
      */
     suspend fun pickForConnect() {
-        val signal = roundDone
-        if (roundRunning.get() && signal != null && !signal.isCompleted) {
-            signal.await()
-        } else {
-            runRound()
-        }
         val cc = activeCountry(app) ?: return
         val groupId = managedGroupId() ?: return
         val profiles = withContext(Dispatchers.IO) {
             SagerDatabase.proxyDao.getByGroup(groupId)
         }
-        val current = profiles.firstOrNull { it.id == DataStore.selectedProxy }
-        if (current != null &&
-            NbGeoStore.countryFor(app, current.requireBean()) == cc
-        ) {
-            return
-        }
         val inCountry = profiles.filter {
             NbGeoStore.countryFor(app, it.requireBean()) == cc
         }
-        val fallback = inCountry.filter { it.status == 1 }.minByOrNull { it.ping }
-            ?: inCountry.minByOrNull { it.ping }
-        if (fallback != null) {
-            val previous = DataStore.selectedProxy
-            DataStore.selectedProxy = fallback.id
-            ProfileManager.postUpdate(previous)
-            ProfileManager.postUpdate(fallback.id)
-            Log.i(TAG, "connect fallback -> ${fallback.requireBean().displayName()}")
+        val current = inCountry.firstOrNull { it.id == DataStore.selectedProxy }
+        val best = when {
+            current != null -> current
+            else -> inCountry.filter { it.status == 1 && it.ping > 0 }
+                .minByOrNull { it.ping }
+                ?: inCountry.filter { it.ping > 0 }.minByOrNull { it.ping }
+                ?: inCountry.firstOrNull()
         }
+        if (best != null && DataStore.selectedProxy != best.id) {
+            val previous = DataStore.selectedProxy
+            DataStore.selectedProxy = best.id
+            ProfileManager.postUpdate(previous)
+            ProfileManager.postUpdate(best.id)
+            Log.i(TAG, "connect pick -> ${best.requireBean().displayName()} (${best.ping}ms)")
+        }
+        scope.launch { runRound() }
     }
 
     /** Speed-test one candidate of the active country. */

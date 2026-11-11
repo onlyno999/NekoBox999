@@ -136,7 +136,7 @@ class MainActivity : ThemedActivity(),
                 // service starts on the lowest-latency node.
                 lifecycleScope.launch {
                     snackbar("正在优选节点…").show()
-                    withTimeoutOrNull(60_000) { NbLoadBalancer.pickForConnect() }
+                    withTimeoutOrNull(15_000) { NbLoadBalancer.pickForConnect() }
                     connect.launch(null)
                 }
             } else {
