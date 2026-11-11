@@ -1127,17 +1127,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             val configurationList = HashMap<Long, ProxyEntity>()
 
             // ---- NekoBox999: collapsible country sections ----
-            sealed interface GeoRow
-
-            data class GeoHeader(
-                val key: String,
-                val title: String,
-                val count: Int,
-                val expanded: Boolean,
-            ) : GeoRow
-
-            data class GeoItem(val profileId: Long) : GeoRow
-
             var geoRows: List<GeoRow> = emptyList()
                 private set
 
@@ -1515,7 +1504,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             val lbText: TextView = view.findViewById(R.id.geo_header_lb)
             val arrowText: TextView = view.findViewById(R.id.geo_header_arrow)
 
-            fun bind(header: ConfigurationAdapter.GeoHeader) {
+            fun bind(header: GeoHeader) {
                 titleText.text = "${header.title} · ${header.count}"
                 arrowText.text = if (header.expanded) "▾" else "▸"
                 view.setOnClickListener {
