@@ -218,7 +218,7 @@ object NbGeoProbe {
             val byCountry = profiles.groupBy {
                 NbGeoStore.countryFor(context, it.requireBean())
             }
-            var moved = 0
+            val movedGroups = mutableListOf<Long>()
             for ((cc, members) in byCountry) {
                 if (cc == null) continue
                 val name = NbGeoStore.countryGroupName(cc)
@@ -233,11 +233,14 @@ object NbGeoProbe {
                     profile.userOrder = index.toLong()
                 }
                 SagerDatabase.proxyDao.updateProxy(members)
-                moved += members.size
+                movedGroups.add(target.id)
             }
-            if (moved > 0) {
-                GroupManager.postReload()
-                Log.i(TAG, "distributed $moved profiles into country groups")
+            if (movedGroups.isNotEmpty()) {
+                for (gid in movedGroups) {
+                    GroupManager.postReload(gid)
+                }
+                GroupManager.postReload(sourceGroupId)
+                Log.i(TAG, "distributed profiles into ${movedGroups.size} country groups")
             }
         }
 
