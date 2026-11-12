@@ -14,35 +14,31 @@ import kotlinx.coroutines.launch
 /**
  * NekoBox999: license enforcement inside the :bg service process.
  *
- * The startup gate lives in the UI process, but the proxy runs in
- * :bg — without this watchdog a connection started before expiry
- * would simply keep running past it. While a proxy is up, the
- * watchdog wakes once a minute; once the stored expiry has passed
- * it validates on its own (at most once per ten minutes) and a
- * server denial cuts the connection through the normal graceful
- * stop, exactly like pressing the stop button. A server-side
- * renewal just lets it keep running, and a network error never
- * cuts — the check retries until a real answer lands.
+ * Rule (owner-set, 2026-11-12): the moment the locally stored
+ * expiry passes, the connection stops — full stop. The decision
+ * is purely local: no online validation is consulted first,
+ * and having no network changes nothing. (The earlier
+ * validate-then-decide design let a tunnel live on whenever
+ * the background validation could not produce a verdict.)
  *
- * The validation runs on a fixed cadence while connected, not
- * only after the locally stored expiry passes: the server gates
- * on its own record, so a license shortened or revoked
- * server-side is discovered within one cadence even when the
- * stored expiry still reads far in the future. Every decision
- * is written to the app log so a missed cut is diagnosable.
+ * The watchdog runs only while a proxy is up. It also stops
+ * the service when no license token exists at all: a running
+ * proxy without a session is only reachable if the session
+ * was wiped mid-connection (e.g. the server revoked the
+ * device and the UI cleared it), never through normal use —
+ * the startup gate keeps unlicensed installs from connecting.
+ *
+ * A permanent license (no stored expiry) never triggers.
+ * The stored expiry itself is refreshed by the app's normal
+ * entry validation whenever the UI is opened.
  */
 object NbExpiryWatchdog {
 
     private const val TICK_MS = 30_000L
-    private const val PERIODIC_VALIDATE_MS = 5 * 60_000L
-    private const val EXPIRED_RETRY_MS = 60_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private var job: Job? = null
-
-    @Volatile
-    private var lastValidateMs = 0L
 
     fun start(context: Context) {
         if (job?.isActive == true) return
@@ -51,6 +47,7 @@ object NbExpiryWatchdog {
         job = scope.launch {
             while (isActive) {
                 runCatching { tick(appCtx) }
+                if (job?.isActive != true) break
                 delay(TICK_MS)
             }
         }
@@ -61,39 +58,17 @@ object NbExpiryWatchdog {
         job = null
     }
 
-    private suspend fun tick(context: Context) {
-        if (!NbAuthManager.hasToken(context)) return
-        val now = System.currentTimeMillis()
-        // Fast path once the stored expiry has passed (wall clock
-        // first, watermark clock confirms); otherwise the slow
-        // periodic cadence is what discovers server-side changes.
-        val expiredLocally = NbAuthManager.expiresAt(context)
-            ?.let { now / 1000L > it && NbAuthManager.localExpiryPassed(context) }
-            ?: false
-        val interval = if (expiredLocally) EXPIRED_RETRY_MS else PERIODIC_VALIDATE_MS
-        if (now - lastValidateMs < interval) return
-        lastValidateMs = now
-        when (val r = NbAuthManager.validateNow(context)) {
-            is NbAuthManager.Outcome.Denied -> {
-                Logs.w("NbExpiryWatchdog: server denied (${r.reason}); stopping service")
-                SagerNet.stopService()
-                stop()
-            }
-            is NbAuthManager.Outcome.Ok -> {
-                // validateNow stored the server's current expiry;
-                // if it is already past, the license is dead even
-                // though the server answered ok.
-                if (NbAuthManager.localExpiryPassed(context)) {
-                    Logs.w("NbExpiryWatchdog: validated but expiry already passed; stopping service")
-                    SagerNet.stopService()
-                    stop()
-                }
-            }
-            NbAuthManager.Outcome.NetworkError -> {
-                if (expiredLocally) {
-                    Logs.w("NbExpiryWatchdog: expired locally, server unreachable; keeping tunnel until a real answer lands")
-                }
-            }
+    private fun tick(context: Context) {
+        if (!NbAuthManager.hasToken(context)) {
+            Logs.w("NbExpiryWatchdog: no license session while connected; stopping service")
+            SagerNet.stopService()
+            stop()
+            return
+        }
+        if (NbAuthManager.localExpiryPassed(context)) {
+            Logs.w("NbExpiryWatchdog: local expiry passed; stopping service")
+            SagerNet.stopService()
+            stop()
         }
     }
 }

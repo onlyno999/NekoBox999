@@ -67,6 +67,11 @@ class MainActivity : ThemedActivity(),
 
         // NekoBox999: startup license gate (ported from v2one999).
         if (!io.nekohasekai.sagernet.auth.NbAuthManager.hasLiveSession(this)) {
+            // Local expiry already passed: the tunnel stops now,
+            // before any validation is consulted.
+            if (io.nekohasekai.sagernet.auth.NbAuthManager.localExpiryPassed(this)) {
+                SagerNet.stopService()
+            }
             startActivity(Intent(this, AuthGateActivity::class.java))
             finish()
             return
