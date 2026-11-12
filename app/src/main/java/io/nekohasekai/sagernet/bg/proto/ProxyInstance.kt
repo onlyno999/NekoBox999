@@ -2,7 +2,7 @@ package io.nekohasekai.sagernet.bg.proto
 
 import android.content.Context
 import io.nekohasekai.sagernet.BuildConfig
-import io.nekohasekai.sagernet.auth.NbExpiryWatchdog
+import io.nekohasekai.sagernet.auth.NbExpiryAlarm
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.bg.ServiceNotification
 import io.nekohasekai.sagernet.database.ProxyEntity
@@ -54,14 +54,15 @@ class ProxyInstance(profile: ProxyEntity, var service: BaseService.Interface? = 
         runOnDefaultDispatcher {
             looper = service?.let { TrafficLooper(it.data, this) }
             looper?.start()
-            // NekoBox999: a connection must not outlive its
-            // license — the :bg process enforces expiry itself.
-            (service as? Context)?.let { NbExpiryWatchdog.start(it) }
+            // NekoBox999: (re)arm the expiry alarm for this
+            // connection — it also stops the service on the
+            // spot if the stored expiry has already passed
+            // (e.g. the service was restored after expiry).
+            (service as? Context)?.let { NbExpiryAlarm.reschedule(it) }
         }
     }
 
     override fun close() {
-        NbExpiryWatchdog.stop()
         super.close()
         runBlocking {
             looper?.stop()

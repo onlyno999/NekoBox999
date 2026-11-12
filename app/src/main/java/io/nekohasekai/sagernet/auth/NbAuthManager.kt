@@ -201,6 +201,7 @@ object NbAuthManager {
         putStr(context, KEY_TOKEN, null)
         putLong(context, KEY_EXPIRES_AT, -1L)
         putLong(context, KEY_LAST_OK_MS, 0L)
+        NbExpiryAlarm.reschedule(context)
     }
 
     private fun token(context: Context): String? = getStr(context, KEY_TOKEN)
@@ -209,6 +210,7 @@ object NbAuthManager {
         putStr(context, KEY_TOKEN, token)
         putLong(context, KEY_EXPIRES_AT, expiresAt ?: -1L)
         putLong(context, KEY_LAST_OK_MS, effectiveNowMs(context))
+        NbExpiryAlarm.reschedule(context)
     }
 
     // ---------- device key + signer ----------
@@ -291,6 +293,7 @@ object NbAuthManager {
             val exp = if (json.isNull("expires_at")) null else json.optLong("expires_at")
             putLong(context, KEY_EXPIRES_AT, exp ?: -1L)
             putLong(context, KEY_LAST_OK_MS, effectiveNowMs(context))
+            NbExpiryAlarm.reschedule(context)
             return Outcome.Ok(exp)
         }
         val reason = json?.optString("reason")?.takeIf { it.isNotBlank() } ?: "denied"
