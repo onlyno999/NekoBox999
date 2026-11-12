@@ -200,23 +200,34 @@ object NbLoadBalancer {
                 SagerDatabase.proxyDao.getByGroup(groupId)
             }
             if (all.isEmpty()) return
-            val sweepQueue = ConcurrentLinkedQueue(all)
-            val sweepers = mutableListOf<Job>()
-            repeat(32) {
-                sweepers.add(scope.launch {
-                    while (true) {
-                        val profile = sweepQueue.poll() ?: break
-                        val stored = NbGeoStore.countryFor(app, profile.requireBean())
-                        val actual = runCatching {
-                            GeoTest().doFetchCountry(profile)
-                        }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
-                        if (actual != null && actual != stored) {
-                            NbGeoStore.record(app, profile.requireBean(), actual)
-                        }
+            // Same two passes as the probe sweep, 100 concurrent:
+            // primary source for the whole group first, fallback
+            // only for the nodes the primary could not place.
+            // Only changes are recorded; a failed lookup never
+            // erases a known country.
+            val leftovers = ConcurrentLinkedQueue<ProxyEntity>()
+            NbGeoProbe.runPhase(all) { profile ->
+                val stored = NbGeoStore.countryFor(app, profile.requireBean())
+                val actual = runCatching {
+                    GeoTest().doFetchCountryPrimary(profile)
+                }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
+                if (actual != null) {
+                    if (actual != stored) {
+                        NbGeoStore.record(app, profile.requireBean(), actual)
                     }
-                })
+                } else {
+                    leftovers.add(profile)
+                }
             }
-            sweepers.forEach { it.join() }
+            NbGeoProbe.runPhase(leftovers.toList()) { profile ->
+                val stored = NbGeoStore.countryFor(app, profile.requireBean())
+                val actual = runCatching {
+                    GeoTest().doFetchCountryFallback(profile)
+                }.getOrNull()?.uppercase()?.takeIf { it.length == 2 }
+                if (actual != null && actual != stored) {
+                    NbGeoStore.record(app, profile.requireBean(), actual)
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "region sweep failed", e)
         } finally {

@@ -184,35 +184,69 @@ object NbGeoProbe {
     }
 
     /**
-     * Probe the given profiles' exit countries, gently: at most two
-     * box instances at a time, and the whole phase yields the moment
-     * the user starts a manual connection test.
+     * One sweep phase over [targets] at [concurrency] workers;
+     * yields the moment the user starts a manual connection test
+     * when [yieldToManualTest] is set.
+     */
+    suspend fun runPhase(
+        targets: List<ProxyEntity>,
+        concurrency: Int = 100,
+        yieldToManualTest: Boolean = false,
+        task: suspend (ProxyEntity) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        if (targets.isEmpty()) return@withContext
+        val queue = ConcurrentLinkedQueue(targets)
+        val jobs = mutableListOf<kotlinx.coroutines.Job>()
+        repeat(minOf(concurrency, targets.size)) {
+            jobs.add(launch {
+                while (true) {
+                    if (yieldToManualTest && DataStore.runningTest) break
+                    val profile = queue.poll() ?: break
+                    task(profile)
+                }
+            })
+        }
+        jobs.forEach { it.join() }
+    }
+
+    /**
+     * Two-phase country sweep at 100 concurrent: the primary
+     * source (Cloudflare trace) runs over every target first;
+     * only the nodes still unknown after that pass see the
+     * fallback source (ip.sb). Each node is recorded exactly
+     * once, when its final phase resolves.
      */
     suspend fun probeProfiles(
         context: Context,
         targets: List<ProxyEntity>,
         onProbed: (suspend () -> Unit)? = null,
-    ) =
-        withContext(Dispatchers.IO) {
-            if (targets.isEmpty()) return@withContext
-            val queue = ConcurrentLinkedQueue(targets)
-            val jobs = mutableListOf<kotlinx.coroutines.Job>()
-            repeat(minOf(100, targets.size)) {
-                jobs.add(launch {
-                    while (true) {
-                        if (DataStore.runningTest) break
-                        val profile = queue.poll() ?: break
-                        val bean = profile.requireBean()
-                        val cc = runCatching {
-                            GeoTest().doFetchCountry(profile)
-                        }.getOrNull()
-                        NbGeoStore.record(context, bean, cc)
-                        onProbed?.let { runCatching { it() } }
-                        Log.i(TAG, "geo ${bean.displayName()} -> ${cc ?: "?"}")
-                    }
-                })
+    ) {
+        if (targets.isEmpty()) return
+        val leftovers = ConcurrentLinkedQueue<ProxyEntity>()
+        runPhase(targets, yieldToManualTest = true) { profile ->
+            val bean = profile.requireBean()
+            val cc = runCatching {
+                GeoTest().doFetchCountryPrimary(profile)
+            }.getOrNull()
+            if (cc != null) {
+                NbGeoStore.record(context, bean, cc)
+                onProbed?.let { runCatching { it() } }
+                Log.i(TAG, "geo ${bean.displayName()} -> $cc (primary)")
+            } else {
+                leftovers.add(profile)
             }
-            jobs.forEach { it.join() }
         }
+        val phase2 = leftovers.toList()
+        if (phase2.isEmpty()) return
+        runPhase(phase2, yieldToManualTest = true) { profile ->
+            val bean = profile.requireBean()
+            val cc = runCatching {
+                GeoTest().doFetchCountryFallback(profile)
+            }.getOrNull()
+            NbGeoStore.record(context, bean, cc)
+            onProbed?.let { runCatching { it() } }
+            Log.i(TAG, "geo ${bean.displayName()} -> ${cc ?: "?"} (fallback)")
+        }
+    }
 
 }

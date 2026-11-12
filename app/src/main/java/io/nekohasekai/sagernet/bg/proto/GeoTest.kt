@@ -9,7 +9,11 @@ import io.nekohasekai.sagernet.database.ProxyEntity
  * Primary source is Cloudflare's trace endpoint (plain text with
  * a `loc=XX` line, tiny and fast, happy with heavy concurrency).
  * Some exits cannot reach it at all, so ip.sb's geoip JSON
- * (`country_code`) is kept as a fallback.
+ * (`country_code`) is kept as a fallback. Sweeps run the two as
+ * separate passes (see NbGeoProbe.sweepCountries): primary for
+ * everyone first, fallback only for whoever is still unknown —
+ * the free fallback is never sprayed at nodes the primary has
+ * not finished with yet.
  */
 class GeoTest {
 
@@ -21,22 +25,32 @@ class GeoTest {
         return TestInstance(profile, link, timeout).doFetch()
     }
 
-    /** Two-letter exit country code for the profile, or null. */
-    suspend fun doFetchCountry(profile: ProxyEntity): String? {
-        runCatching {
-            val body = doFetch(profile)
-            for (line in body.lineSequence()) {
-                if (line.startsWith("loc=")) {
-                    line.substring(4).trim()
-                        .takeIf { it.length == 2 }?.let { return it }
-                }
+    private fun parseTrace(body: String): String? {
+        for (line in body.lineSequence()) {
+            if (line.startsWith("loc=")) {
+                return line.substring(4).trim().takeIf { it.length == 2 }
             }
         }
+        return null
+    }
+
+    /** Primary source only (Cloudflare trace). */
+    suspend fun doFetchCountryPrimary(profile: ProxyEntity): String? {
+        return runCatching { parseTrace(doFetch(profile)) }.getOrNull()
+    }
+
+    /** Fallback source only (ip.sb geoip). */
+    suspend fun doFetchCountryFallback(profile: ProxyEntity): String? {
         return runCatching {
             val body = TestInstance(profile, fallbackLink, timeout).doFetch()
             Regex("\"country_code\"\\s*:\\s*\"([A-Za-z]{2})\"").find(body)
                 ?.groupValues?.get(1)?.uppercase()
         }.getOrNull()
+    }
+
+    /** Two-letter exit country code for the profile, or null. */
+    suspend fun doFetchCountry(profile: ProxyEntity): String? {
+        return doFetchCountryPrimary(profile) ?: doFetchCountryFallback(profile)
     }
 
 }
