@@ -23,11 +23,19 @@ import kotlinx.coroutines.launch
  * stop, exactly like pressing the stop button. A server-side
  * renewal just lets it keep running, and a network error never
  * cuts — the check retries until a real answer lands.
+ *
+ * The validation runs on a fixed cadence while connected, not
+ * only after the locally stored expiry passes: the server gates
+ * on its own record, so a license shortened or revoked
+ * server-side is discovered within one cadence even when the
+ * stored expiry still reads far in the future. Every decision
+ * is written to the app log so a missed cut is diagnosable.
  */
 object NbExpiryWatchdog {
 
-    private const val TICK_MS = 60_000L
-    private const val VALIDATE_RETRY_MS = 10 * 60_000L
+    private const val TICK_MS = 30_000L
+    private const val PERIODIC_VALIDATE_MS = 5 * 60_000L
+    private const val EXPIRED_RETRY_MS = 60_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -39,6 +47,7 @@ object NbExpiryWatchdog {
     fun start(context: Context) {
         if (job?.isActive == true) return
         val appCtx = context.applicationContext
+        Logs.w("NbExpiryWatchdog: armed")
         job = scope.launch {
             while (isActive) {
                 runCatching { tick(appCtx) }
@@ -54,25 +63,37 @@ object NbExpiryWatchdog {
 
     private suspend fun tick(context: Context) {
         if (!NbAuthManager.hasToken(context)) return
-        // Null expiry = permanent license; nothing ever cuts.
-        val exp = NbAuthManager.expiresAt(context) ?: return
-        if (System.currentTimeMillis() / 1000L <= exp) return
-        // Wall clock is past expiry; confirm with the watermark
-        // clock before spending a validation on it.
-        if (!NbAuthManager.localExpiryPassed(context)) return
         val now = System.currentTimeMillis()
-        if (now - lastValidateMs < VALIDATE_RETRY_MS) return
+        // Fast path once the stored expiry has passed (wall clock
+        // first, watermark clock confirms); otherwise the slow
+        // periodic cadence is what discovers server-side changes.
+        val expiredLocally = NbAuthManager.expiresAt(context)
+            ?.let { now / 1000L > it && NbAuthManager.localExpiryPassed(context) }
+            ?: false
+        val interval = if (expiredLocally) EXPIRED_RETRY_MS else PERIODIC_VALIDATE_MS
+        if (now - lastValidateMs < interval) return
         lastValidateMs = now
-        when (NbAuthManager.validateNow(context)) {
+        when (val r = NbAuthManager.validateNow(context)) {
             is NbAuthManager.Outcome.Denied -> {
-                Logs.w("NbExpiryWatchdog: license denied after expiry, stopping service")
+                Logs.w("NbExpiryWatchdog: server denied (${r.reason}); stopping service")
                 SagerNet.stopService()
                 stop()
             }
-            // Ok: the stored expiry moved forward; the next tick
-            // sees a live license again. NetworkError: unproven —
-            // keep the tunnel and retry on the slow cadence.
-            else -> Unit
+            is NbAuthManager.Outcome.Ok -> {
+                // validateNow stored the server's current expiry;
+                // if it is already past, the license is dead even
+                // though the server answered ok.
+                if (NbAuthManager.localExpiryPassed(context)) {
+                    Logs.w("NbExpiryWatchdog: validated but expiry already passed; stopping service")
+                    SagerNet.stopService()
+                    stop()
+                }
+            }
+            NbAuthManager.Outcome.NetworkError -> {
+                if (expiredLocally) {
+                    Logs.w("NbExpiryWatchdog: expired locally, server unreachable; keeping tunnel until a real answer lands")
+                }
+            }
         }
     }
 }
