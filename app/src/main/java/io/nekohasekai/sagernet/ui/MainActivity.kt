@@ -97,6 +97,9 @@ class MainActivity : ThemedActivity(),
             lifecycleScope.launch {
                 val r = io.nekohasekai.sagernet.auth.NbAuthManager.validateNow(this@MainActivity)
                 if (r is io.nekohasekai.sagernet.auth.NbAuthManager.Outcome.Denied) {
+                    // Denied means cut, like the v2one999 client:
+                    // stop a running connection too, not just the UI.
+                    SagerNet.stopService()
                     startActivity(Intent(this@MainActivity, AuthGateActivity::class.java))
                     finish()
                 }

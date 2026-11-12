@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.R
+import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.auth.NbAuthManager
 import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.auth.NbSubscriptionSync
@@ -70,8 +71,10 @@ class AuthGateActivity : AppCompatActivity() {
                 setBusy(true, "授权已到期，正在联网验证…")
                 when (val r = NbAuthManager.validateNow(this@AuthGateActivity)) {
                     is NbAuthManager.Outcome.Ok -> enterApp()
-                    is NbAuthManager.Outcome.Denied ->
+                    is NbAuthManager.Outcome.Denied -> {
+                        SagerNet.stopService()
                         setBusy(false, "授权验证未通过（${r.reason}）。如已续费，请重新输入激活码。")
+                    }
                     NbAuthManager.Outcome.NetworkError ->
                         setBusy(false, "网络不通，无法验证到期授权。请联网后重启应用，或重新输入激活码。")
                 }
@@ -81,8 +84,10 @@ class AuthGateActivity : AppCompatActivity() {
             setBusy(true, "正在验证授权…")
             when (val r = NbAuthManager.claim(this@AuthGateActivity)) {
                 is NbAuthManager.Outcome.Ok -> enterApp()
-                is NbAuthManager.Outcome.Denied ->
+                is NbAuthManager.Outcome.Denied -> {
+                    SagerNet.stopService()
                     setBusy(false, "本机尚未开通。把机器码报给卖家开通，或输入激活码。")
+                }
                 NbAuthManager.Outcome.NetworkError ->
                     setBusy(false, "网络不通，无法验证授权。请联网后重试，或输入激活码。")
             }
