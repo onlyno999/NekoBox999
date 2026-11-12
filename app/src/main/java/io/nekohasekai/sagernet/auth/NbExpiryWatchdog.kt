@@ -4,7 +4,9 @@ import android.content.Context
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.ktx.Logs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -27,12 +29,14 @@ object NbExpiryWatchdog {
     private const val TICK_MS = 60_000L
     private const val VALIDATE_RETRY_MS = 10 * 60_000L
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private var job: Job? = null
 
     @Volatile
     private var lastValidateMs = 0L
 
-    fun start(scope: CoroutineScope, context: Context) {
+    fun start(context: Context) {
         if (job?.isActive == true) return
         val appCtx = context.applicationContext
         job = scope.launch {

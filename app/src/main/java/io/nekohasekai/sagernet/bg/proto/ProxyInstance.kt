@@ -56,7 +56,7 @@ class ProxyInstance(profile: ProxyEntity, var service: BaseService.Interface? = 
             looper?.start()
             // NekoBox999: a connection must not outlive its
             // license — the :bg process enforces expiry itself.
-            (service as? Context)?.let { NbExpiryWatchdog.start(this@ProxyInstance, it) }
+            (service as? Context)?.let { NbExpiryWatchdog.start(it) }
         }
     }
 
