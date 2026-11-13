@@ -162,6 +162,16 @@ object NbLoadBalancer {
             runCatching { service.resetDialHealth(MAIN_LINE_TAG) }
             return
         }
+        val selectedExists = withContext(Dispatchers.IO) {
+            selectedId <= 0L ||
+                SagerDatabase.proxyDao.getById(selectedId) != null
+        }
+        if (!selectedExists) {
+            Log.i(TAG, "watchdog: selected profile is gone; re-picking")
+            failOverFromRecord(groupId, selectedId)
+            healthForSelected = -1L
+            return
+        }
         val failures = runCatching {
             service.queryDialFailures(MAIN_LINE_TAG)
         }.getOrDefault(0L)
@@ -196,6 +206,60 @@ object NbLoadBalancer {
         ProfileManager.postUpdate(previous)
         ProfileManager.postUpdate(best.id)
         Log.i(TAG, "watchdog failover -> ${best.requireBean().displayName()} (${best.ping}ms)")
+        if (DataStore.serviceState.canStop) {
+            SagerNet.reloadService()
+        }
+    }
+
+    /**
+     * The profile in use was deleted (by hand, by the
+     * clear-unavailable action, or by a subscription update).
+     * Re-point the connection at the best remaining node of
+     * its group instead of leaving the selection empty or
+     * dangling: inside the active country when this is the
+     * managed group with one lit, otherwise the group's best
+     * recorded node. Reloads the service when it is running.
+     * Synced from NekoBox++ (same fix, field-verified there).
+     */
+    suspend fun repickSelectionForGroup(
+        groupId: Long,
+        excludeIds: Set<Long> = emptySet(),
+    ) {
+        val all = withContext(Dispatchers.IO) {
+            SagerDatabase.proxyDao.getByGroup(groupId)
+        }.filter { it.id !in excludeIds }
+        if (all.isEmpty()) return
+        val cc = if (groupId == managedGroupId()) activeCountry(app) else null
+        val inPool = if (cc != null) {
+            all.filter {
+                runCatching {
+                    NbGeoStore.countryFor(app, it.requireBean())
+                }.getOrNull() == cc
+            }
+        } else {
+            emptyList()
+        }
+        val candidates = inPool.ifEmpty { all }
+        val best = candidates.filter { it.status == 1 && it.ping > 0 }
+            .minByOrNull { it.ping }
+            ?: candidates.filter { it.ping > 0 }.minByOrNull { it.ping }
+            ?: candidates.first()
+        val previous = DataStore.selectedProxy
+        if (previous == best.id) return
+        DataStore.selectedProxy = best.id
+        ProfileManager.postUpdate(previous)
+        ProfileManager.postUpdate(best.id)
+        Log.i(
+            TAG,
+            "selection lost; re-picked " +
+                runCatching { best.requireBean().displayName() }.getOrNull() +
+                " (" + best.ping + "ms)"
+        )
+        runCatching {
+            io.nekohasekai.sagernet.ktx.Logs.i(
+                "selection lost; re-picked in group " + groupId
+            )
+        }
         if (DataStore.serviceState.canStop) {
             SagerNet.reloadService()
         }

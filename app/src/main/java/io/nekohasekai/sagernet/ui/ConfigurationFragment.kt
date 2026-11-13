@@ -391,11 +391,20 @@ class ConfigurationFragment @JvmOverloads constructor(
                                 }
                             }
                         }
+                        val selectedBeforeClear = DataStore.selectedProxy
                         runOnDefaultDispatcher {
                             for (profile in toClear) {
                                 ProfileManager.deleteProfile2(
                                     profile.groupId, profile.id
                                 )
+                            }
+                            if (toClear.any { it.id == selectedBeforeClear }) {
+                                toClear.firstOrNull()?.groupId?.let { gid ->
+                                    runCatching {
+                                        NbLoadBalancer
+                                            .repickSelectionForGroup(gid)
+                                    }
+                                }
                             }
                         }
                     }
@@ -1387,9 +1396,20 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             override fun commit(actions: List<Pair<Int, ProxyEntity>>) {
                 val profiles = actions.map { it.second }
+                val selectedBefore = DataStore.selectedProxy
                 runOnDefaultDispatcher {
                     for (entity in profiles) {
                         ProfileManager.deleteProfile(entity.groupId, entity.id)
+                    }
+                    // If the node in use was among them and the
+                    // stage-time re-pick did not already move the
+                    // selection, re-pick now.
+                    if (profiles.any { it.id == selectedBefore } &&
+                        DataStore.selectedProxy == selectedBefore
+                    ) {
+                        runCatching {
+                            NbLoadBalancer.repickSelectionForGroup(proxyGroup.id)
+                        }
                     }
                 }
             }
@@ -1739,6 +1759,20 @@ class ConfigurationFragment @JvmOverloads constructor(
                     adapter?.let {
                         val index = it.configurationIdList.indexOf(proxyEntity.id)
                         it.remove(index)
+                        // Deleting the node in use: re-pick right
+                        // away instead of waiting for the undo
+                        // commit - the connection must not sit on
+                        // a ghost while the snackbar is up.
+                        if (proxyEntity.id == DataStore.selectedProxy) {
+                            runOnDefaultDispatcher {
+                                runCatching {
+                                    NbLoadBalancer.repickSelectionForGroup(
+                                        proxyGroup.id,
+                                        setOf(proxyEntity.id)
+                                    )
+                                }
+                            }
+                        }
                         undoManager.remove(index to proxyEntity)
                     }
                 }

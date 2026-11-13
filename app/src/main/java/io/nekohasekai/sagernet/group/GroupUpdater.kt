@@ -159,8 +159,33 @@ abstract class GroupUpdater {
                     }
                 }
 
+                val selectedBefore = DataStore.selectedProxy
+                val selectedWasHere = kotlinx.coroutines.withContext(
+                    kotlinx.coroutines.Dispatchers.IO
+                ) {
+                    runCatching {
+                        SagerDatabase.proxyDao.getById(selectedBefore)?.groupId ==
+                            proxyGroup.id
+                    }.getOrDefault(false)
+                }
                 try {
                     RawUpdater.doUpdate(proxyGroup, subscription, userInterface, byUser)
+                    if (selectedWasHere) {
+                        val stillThere = kotlinx.coroutines.withContext(
+                            kotlinx.coroutines.Dispatchers.IO
+                        ) {
+                            runCatching {
+                                SagerDatabase.proxyDao
+                                    .getById(selectedBefore) != null
+                            }.getOrDefault(true)
+                        }
+                        if (!stillThere) {
+                            runCatching {
+                                io.nekohasekai.sagernet.auth.NbLoadBalancer
+                                    .repickSelectionForGroup(proxyGroup.id)
+                            }
+                        }
+                    }
                     true
                 } catch (e: Throwable) {
                     Logs.w(e)
