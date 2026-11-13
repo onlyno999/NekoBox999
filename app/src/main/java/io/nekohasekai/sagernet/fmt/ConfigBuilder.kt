@@ -1,8 +1,5 @@
 package io.nekohasekai.sagernet.fmt
 
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.widget.Toast
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.bg.VpnService
@@ -60,31 +57,6 @@ class ConfigBuildResult(
     val selectorGroupId: Long,
 ) {
     data class IndexEntity(var chain: LinkedHashMap<Int, ProxyEntity>)
-}
-
-/**
- * Name of the underlying physical interface (Wi-Fi / mobile
- * data), or null when none can be determined. VPN interfaces
- * are skipped: this is about the network underneath any tunnel.
- */
-fun physicalInterfaceName(): String? {
-    val cm = SagerNet.application.getSystemService(Context.CONNECTIVITY_SERVICE)
-        as? ConnectivityManager ?: return null
-    for (network in cm.allNetworks) {
-        val caps = runCatching { cm.getNetworkCapabilities(network) }
-            .getOrNull() ?: continue
-        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
-        if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-            !caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
-            !caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-        ) {
-            continue
-        }
-        val name = runCatching { cm.getLinkProperties(network)?.interfaceName }
-            .getOrNull()
-        if (!name.isNullOrBlank() && !name.startsWith("tun")) return name
-    }
-    return null
 }
 
 fun buildConfig(
@@ -277,18 +249,6 @@ fun buildConfig(
         // init routing object
         route = RouteOptions().apply {
             auto_detect_interface = true
-            if (forTest) {
-                // A test must measure the node itself: leave via
-                // the physical interface so the test is never
-                // captured by a VPN tunnel that happens to be up.
-                // This app stays independent of any other app's
-                // tunnel; when no physical interface is found the
-                // plain behaviour above is kept.
-                physicalInterfaceName()?.let {
-                    auto_detect_interface = false
-                    default_interface = it
-                }
-            }
             rules = mutableListOf()
             rule_set = mutableListOf()
         }
