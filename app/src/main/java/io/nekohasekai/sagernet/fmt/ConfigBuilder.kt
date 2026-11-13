@@ -614,10 +614,22 @@ fun buildConfig(
 
         // NekoBox999 built-in split rules, rule mode only: the V2
         // open geosite/geoip data, delivered as remote rule sets
-        // the core downloads directly and refreshes daily.
-        // Mainland sites and IPs go direct; the rest falls
-        // through to the main line.
+        // the core fetches through the main line and refreshes
+        // daily. Google services are pinned to the main line
+        // first: parts of the CN data claim Google addresses,
+        // which breaks Play downloads (they stall near the end
+        // when the transfer lands on the direct path). Mainland
+        // sites and IPs go direct; the rest falls through to
+        // the main line.
         if (!forTest && NbConnectionMode.current() == NbConnectionMode.RULES) {
+            route.rule_set.add(RuleSet().apply {
+                type = "remote"
+                tag = "geosite-google"
+                format = "binary"
+                url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+                download_detour = TAG_PROXY
+                update_interval = "24h"
+            })
             route.rule_set.add(RuleSet().apply {
                 type = "remote"
                 tag = "geosite-cn"
@@ -633,6 +645,10 @@ fun buildConfig(
                 url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
                 download_detour = TAG_PROXY
                 update_interval = "24h"
+            })
+            route.rules.add(Rule_DefaultOptions().apply {
+                rule_set = mutableListOf("geosite-google")
+                outbound = TAG_PROXY
             })
             route.rules.add(Rule_DefaultOptions().apply {
                 rule_set = mutableListOf("geosite-cn", "geoip-cn")
