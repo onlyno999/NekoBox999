@@ -1559,7 +1559,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 lbText.visibility = View.VISIBLE
                 val active = io.nekohasekai.sagernet.auth.NbLoadBalancer
                     .activeCountry(view.context) == header.key
-                lbText.text = if (active) "自动中" else "自动"
+                lbText.text = if (active) "自动模式" else "自动"
                 lbText.setTextColor(
                     if (active) 0xFF2E9E4F.toInt() else 0xFF777777.toInt()
                 )
@@ -1602,21 +1602,18 @@ class ConfigurationFragment @JvmOverloads constructor(
                     }
                 } else {
                     view.setOnClickListener {
-                        // Auto country armed: nodes in the auto
-                        // section belong to the balancer. Manual
-                        // selection requires turning auto off first.
-                        NbLoadBalancer.activeCountry(view.context)?.let { cc ->
-                            if (NbGeoStore.countryFor(
-                                    view.context, proxyEntity.requireBean()
-                                ) == cc
-                            ) {
-                                Toast.makeText(
-                                    view.context,
-                                    "自动中：先关掉自动才能手动选节点",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                return@setOnClickListener
-                            }
+                        // While a country is in auto mode, the
+                        // balancer owns the main connection app-wide:
+                        // manual selection is blocked for every node
+                        // in every group, not just the auto section.
+                        // Turn auto mode off first.
+                        if (NbLoadBalancer.activeCountry(view.context) != null) {
+                            Toast.makeText(
+                                view.context,
+                                "自动模式：先关掉自动才能手动选择节点",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@setOnClickListener
                         }
                         runOnDefaultDispatcher {
                             var update: Boolean
