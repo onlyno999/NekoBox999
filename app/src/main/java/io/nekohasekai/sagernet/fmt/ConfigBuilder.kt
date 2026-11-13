@@ -124,18 +124,9 @@ fun buildConfig(
     }
 
     val extraRules = if (forTest) listOf() else SagerDatabase.rulesDao.enabledRules()
-    // This builder runs in the service process: drop its frozen
-    // NbGeoStore snapshot so LB pool membership resolves from
-    // the country data as it stands now, not as of process start.
-    if (!forTest) io.nekohasekai.sagernet.auth.NbGeoStore.invalidateCache()
     val extraProxies =
-        if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.flatMap { rule ->
-            when {
-                rule.outbound > 0 && rule.outbound != proxy.id -> listOf(rule.outbound)
-                io.nekohasekai.sagernet.geo.LbRef.isLb(rule.outbound) ->
-                    io.nekohasekai.sagernet.geo.LbRef.memberIds(rule.outbound)
-                else -> listOf()
-            }
+        if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.mapNotNull { rule ->
+            rule.outbound.takeIf { it > 0 && it != proxy.id }
         }.toHashSet().toList()).associateBy { it.id }
     val buildSelector = !forTest && group?.isSelector == true && !forExport
     val userDNSRuleList = mutableListOf<DNSRule_DefaultOptions>()
@@ -488,35 +479,6 @@ fun buildConfig(
             tagMap[key] = buildChain(key, p)
         }
 
-        // NekoBox999: urltest outbounds for rules pointing at an LB country.
-        val lbTags = mutableSetOf<String>()
-        if (!forTest) {
-            val lbRefs = extraRules.map { it.outbound }
-                .filter { io.nekohasekai.sagernet.geo.LbRef.isLb(it) }
-                .distinct()
-            for (ref in lbRefs) {
-                val memberTags = io.nekohasekai.sagernet.geo.LbRef.memberIds(ref)
-                    .mapNotNull { tagMap[it] }
-                if (memberTags.isEmpty()) {
-                    android.util.Log.w(
-                        "NB999",
-                        "LB pool " + io.nekohasekai.sagernet.geo.LbRef.tagFor(ref) +
-                            ": no members with a known country; its rules fall back to the main line"
-                    )
-                }
-                if (memberTags.isNotEmpty()) {
-                    lbTags.add(io.nekohasekai.sagernet.geo.LbRef.tagFor(ref))
-                    outbounds.add(Outbound_URLTestOptions().apply {
-                        type = "urltest"
-                        tag = io.nekohasekai.sagernet.geo.LbRef.tagFor(ref)
-                        outbounds = memberTags
-                        url = "https://www.gstatic.com/generate_204"
-                        tolerance = 50
-                    })
-                }
-            }
-        }
-
         // apply user rules
         for (rule in extraRules) {
             if (rule.packages.isNotEmpty()) {
@@ -616,14 +578,7 @@ fun buildConfig(
                     0L -> TAG_PROXY
                     -1L -> TAG_BYPASS
                     -2L -> TAG_BLOCK
-                    else -> if (io.nekohasekai.sagernet.geo.LbRef.isLb(outId)) {
-                        val lbTag = io.nekohasekai.sagernet.geo.LbRef.tagFor(outId)
-                        if (lbTag in lbTags) lbTag else TAG_PROXY
-                    } else if (outId == proxy.id) {
-                        TAG_PROXY
-                    } else {
-                        tagMap[outId] ?: ""
-                    }
+                    else -> if (outId == proxy.id) TAG_PROXY else tagMap[outId] ?: ""
                 }
 
                 _hack_custom_config = rule.config

@@ -55,11 +55,6 @@ object NbSubscriptionSync {
 
     suspend fun sync(group: ProxyGroup): Result = withContext(Dispatchers.IO) {
         val selectedId = DataStore.selectedProxy
-        val selectedGroupId = try {
-            SagerDatabase.proxyDao.getById(selectedId)?.groupId
-        } catch (e: Exception) {
-            null
-        }
         val selectedKey = try {
             SagerDatabase.proxyDao.getById(selectedId)
                 ?.requireBean()
@@ -94,22 +89,6 @@ object NbSubscriptionSync {
                     }
                     if (newSelected > 0L) {
                         DataStore.selectedProxy = newSelected
-                    }
-                    if (newSelected <= 0L && selectedId > 0L &&
-                        selectedGroupId == group.id
-                    ) {
-                        // The node in use vanished from the new
-                        // subscription: re-pick the group's best
-                        // instead of leaving the selection dangling.
-                        runCatching {
-                            NbLoadBalancer.repickSelectionForGroup(group.id)
-                        }
-                    }
-                    // The whole group was just replaced: if a
-                    // route rule load-balances over it, reload so
-                    // the pool drops the vanished members.
-                    runCatching {
-                        NbLoadBalancer.onPoolMembersDeleted(setOf(group.id))
                     }
                     GroupManager.postReload(group.id)
                     NbAuthManager.markSynced(app)

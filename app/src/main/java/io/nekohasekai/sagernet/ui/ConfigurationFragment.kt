@@ -130,9 +130,6 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     interface SelectCallback {
         fun returnProfile(profileId: Long)
-
-        /** Route picker: a country section's load balancer was chosen. */
-        fun returnLbOutbound(encoded: Long) {}
     }
 
     lateinit var adapter: GroupPagerAdapter
@@ -394,24 +391,10 @@ class ConfigurationFragment @JvmOverloads constructor(
                                 }
                             }
                         }
-                        val selectedBeforeClear = DataStore.selectedProxy
                         runOnDefaultDispatcher {
                             for (profile in toClear) {
                                 ProfileManager.deleteProfile2(
                                     profile.groupId, profile.id
-                                )
-                            }
-                            if (toClear.any { it.id == selectedBeforeClear }) {
-                                toClear.firstOrNull()?.groupId?.let { gid ->
-                                    runCatching {
-                                        NbLoadBalancer
-                                            .repickSelectionForGroup(gid)
-                                    }
-                                }
-                            }
-                            runCatching {
-                                NbLoadBalancer.onPoolMembersDeleted(
-                                    toClear.map { it.groupId }.toSet()
                                 )
                             }
                         }
@@ -1404,27 +1387,9 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             override fun commit(actions: List<Pair<Int, ProxyEntity>>) {
                 val profiles = actions.map { it.second }
-                val selectedBefore = DataStore.selectedProxy
                 runOnDefaultDispatcher {
                     for (entity in profiles) {
                         ProfileManager.deleteProfile(entity.groupId, entity.id)
-                    }
-                    // If the node in use was among them and the
-                    // stage-time re-pick did not already move the
-                    // selection, re-pick now.
-                    if (profiles.any { it.id == selectedBefore } &&
-                        DataStore.selectedProxy == selectedBefore
-                    ) {
-                        runCatching {
-                            NbLoadBalancer.repickSelectionForGroup(proxyGroup.id)
-                        }
-                    }
-                    // If a route rule load-balances over this
-                    // group, the running pool still lists the
-                    // deleted profiles as members; reload so
-                    // the pool drops them and re-picks a carrier.
-                    runCatching {
-                        NbLoadBalancer.onPoolMembersDeleted(setOf(proxyGroup.id))
                     }
                 }
             }
@@ -1600,24 +1565,10 @@ class ConfigurationFragment @JvmOverloads constructor(
                 )
                 lbText.setTypeface(null, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                 lbText.setOnClickListener {
-                    if (select) {
-                        // Route-rule picker: choosing this country binds
-                        // the rule to that country's own load-balance
-                        // pool (a config-level urltest outbound). It is
-                        // independent of the front-page balancer state,
-                        // which this must not touch.
-                        val frag = parentFragment as? ConfigurationFragment
-                        (frag?.requireActivity() as? SelectCallback)
-                            ?.returnLbOutbound(
-                                io.nekohasekai.sagernet.geo.LbRef
-                                    .encode(proxyGroup.id, header.key)
-                            )
-                    } else {
-                        io.nekohasekai.sagernet.auth.NbLoadBalancer.setActive(
-                            view.context, if (active) null else header.key
-                        )
-                        adapter?.notifyDataSetChanged()
-                    }
+                    io.nekohasekai.sagernet.auth.NbLoadBalancer.setActive(
+                        view.context, if (active) null else header.key
+                    )
+                    adapter?.notifyDataSetChanged()
                 }
             }
         }
@@ -1788,20 +1739,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                     adapter?.let {
                         val index = it.configurationIdList.indexOf(proxyEntity.id)
                         it.remove(index)
-                        // Deleting the node in use: re-pick right
-                        // away instead of waiting for the undo
-                        // commit - the connection must not sit on
-                        // a ghost while the snackbar is up.
-                        if (proxyEntity.id == DataStore.selectedProxy) {
-                            runOnDefaultDispatcher {
-                                runCatching {
-                                    NbLoadBalancer.repickSelectionForGroup(
-                                        proxyGroup.id,
-                                        setOf(proxyEntity.id)
-                                    )
-                                }
-                            }
-                        }
                         undoManager.remove(index to proxyEntity)
                     }
                 }

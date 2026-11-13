@@ -162,16 +162,6 @@ object NbLoadBalancer {
             runCatching { service.resetDialHealth(MAIN_LINE_TAG) }
             return
         }
-        val selectedExists = withContext(Dispatchers.IO) {
-            selectedId <= 0L ||
-                SagerDatabase.proxyDao.getById(selectedId) != null
-        }
-        if (!selectedExists) {
-            Log.i(TAG, "watchdog: selected profile is gone; re-picking")
-            failOverFromRecord(groupId, selectedId)
-            healthForSelected = -1L
-            return
-        }
         val failures = runCatching {
             service.queryDialFailures(MAIN_LINE_TAG)
         }.getOrDefault(0L)
@@ -209,93 +199,6 @@ object NbLoadBalancer {
         if (DataStore.serviceState.canStop) {
             SagerNet.reloadService()
         }
-    }
-
-    /**
-     * The profile in use was deleted (by hand, by the
-     * clear-unavailable action, or by a subscription update).
-     * Re-point the connection at the best remaining node of
-     * its group instead of leaving the selection empty or
-     * dangling: inside the active country when this is the
-     * managed group with one lit, otherwise the group's best
-     * recorded node. Reloads the service when it is running.
-     * Synced from NekoBox++ (same fix, field-verified there).
-     */
-    suspend fun repickSelectionForGroup(
-        groupId: Long,
-        excludeIds: Set<Long> = emptySet(),
-    ) {
-        val all = withContext(Dispatchers.IO) {
-            SagerDatabase.proxyDao.getByGroup(groupId)
-        }.filter { it.id !in excludeIds }
-        if (all.isEmpty()) return
-        val cc = if (groupId == managedGroupId()) activeCountry(app) else null
-        val inPool = if (cc != null) {
-            all.filter {
-                runCatching {
-                    NbGeoStore.countryFor(app, it.requireBean())
-                }.getOrNull() == cc
-            }
-        } else {
-            emptyList()
-        }
-        val candidates = inPool.ifEmpty { all }
-        val best = candidates.filter { it.status == 1 && it.ping > 0 }
-            .minByOrNull { it.ping }
-            ?: candidates.filter { it.ping > 0 }.minByOrNull { it.ping }
-            ?: candidates.first()
-        val previous = DataStore.selectedProxy
-        if (previous == best.id) return
-        DataStore.selectedProxy = best.id
-        ProfileManager.postUpdate(previous)
-        ProfileManager.postUpdate(best.id)
-        Log.i(
-            TAG,
-            "selection lost; re-picked " +
-                runCatching { best.requireBean().displayName() }.getOrNull() +
-                " (" + best.ping + "ms)"
-        )
-        runCatching {
-            io.nekohasekai.sagernet.ktx.Logs.i(
-                "selection lost; re-picked in group " + groupId
-            )
-        }
-        if (DataStore.serviceState.canStop) {
-            SagerNet.reloadService()
-        }
-    }
-
-    /**
-     * Profiles were just deleted for real. When a route rule
-     * load-balances over a pool of one of the affected groups,
-     * the running config still lists the deleted profiles as
-     * pool members: routed traffic keeps aiming at a ghost, no
-     * surviving member takes over and none shows any usage.
-     * Reload so the pool is rebuilt from the surviving members
-     * and the core re-picks a carrier. True when reloaded.
-     * Synced from NekoBox++ (field-verified there).
-     */
-    suspend fun onPoolMembersDeleted(groupIds: Set<Long>): Boolean {
-        if (groupIds.isEmpty()) return false
-        if (!DataStore.serviceState.canStop) return false
-        val referenced = withContext(Dispatchers.IO) {
-            runCatching {
-                SagerDatabase.rulesDao.enabledRules().any { rule ->
-                    io.nekohasekai.sagernet.geo.LbRef.isLb(rule.outbound) &&
-                        io.nekohasekai.sagernet.geo.LbRef
-                            .groupId(rule.outbound) in groupIds
-                }
-            }.getOrDefault(false)
-        }
-        if (!referenced) return false
-        Log.i(TAG, "pool member deleted; reloading so the pool re-picks")
-        runCatching {
-            io.nekohasekai.sagernet.ktx.Logs.i(
-                "pool member deleted; reloading so the pool re-picks"
-            )
-        }
-        SagerNet.reloadService()
-        return true
     }
 
     private suspend fun managedGroupId(): Long? = withContext(Dispatchers.IO) {

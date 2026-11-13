@@ -2,7 +2,6 @@ package io.nekohasekai.sagernet.group
 
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.database.DataStore
-import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.database.GroupManager
 import io.nekohasekai.sagernet.database.ProxyGroup
 import io.nekohasekai.sagernet.database.SubscriptionBean
@@ -160,37 +159,8 @@ abstract class GroupUpdater {
                     }
                 }
 
-                val selectedBefore = DataStore.selectedProxy
-                val selectedWasHere = kotlinx.coroutines.withContext(
-                    kotlinx.coroutines.Dispatchers.IO
-                ) {
-                    runCatching {
-                        SagerDatabase.proxyDao.getById(selectedBefore)?.groupId ==
-                            proxyGroup.id
-                    }.getOrDefault(false)
-                }
                 try {
                     RawUpdater.doUpdate(proxyGroup, subscription, userInterface, byUser)
-                    if (selectedWasHere) {
-                        val stillThere = kotlinx.coroutines.withContext(
-                            kotlinx.coroutines.Dispatchers.IO
-                        ) {
-                            runCatching {
-                                SagerDatabase.proxyDao
-                                    .getById(selectedBefore) != null
-                            }.getOrDefault(true)
-                        }
-                        if (!stillThere) {
-                            runCatching {
-                                io.nekohasekai.sagernet.auth.NbLoadBalancer
-                                    .repickSelectionForGroup(proxyGroup.id)
-                            }
-                        }
-                    }
-                    runCatching {
-                        io.nekohasekai.sagernet.auth.NbLoadBalancer
-                            .onPoolMembersDeleted(setOf(proxyGroup.id))
-                    }
                     true
                 } catch (e: Throwable) {
                     Logs.w(e)

@@ -20,11 +20,6 @@ class OutboundPreference
     override fun getSummary(): CharSequence? {
         if (value == "3") {
             val routeOutbound = DataStore.profileCacheStore.getLong(key + "Long") ?: 0
-            if (io.nekohasekai.sagernet.geo.LbRef.isLb(routeOutbound)) {
-                return io.nekohasekai.sagernet.geo.LbRef.label(
-                    io.nekohasekai.sagernet.geo.LbRef.countryCode(routeOutbound)
-                )
-            }
             if (routeOutbound > 0) {
                 ProfileManager.getProfile(routeOutbound)?.displayName()?.let {
                     return it

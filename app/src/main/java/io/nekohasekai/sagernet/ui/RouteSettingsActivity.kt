@@ -125,29 +125,15 @@ class RouteSettingsActivity(
     val selectProfileForAdd = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { (resultCode, data) ->
-        if (resultCode == Activity.RESULT_OK && data != null) {
-            if (data.hasExtra(ProfileSelectActivity.EXTRA_LB_OUTBOUND)) {
-                val encoded =
-                    data.getLongExtra(ProfileSelectActivity.EXTRA_LB_OUTBOUND, 0)
-                runOnDefaultDispatcher {
-                    DataStore.routeOutboundRule = encoded
-                    DataStore.dirty = true
-                    onMainDispatcher {
-                        outbound.value = "3"
-                    }
-                }
-                return@registerForActivityResult
-            }
-            runOnDefaultDispatcher {
-                val profile = ProfileManager.getProfile(
-                    data.getLongExtra(
-                        ProfileSelectActivity.EXTRA_PROFILE_ID, 0
-                    )
-                ) ?: return@runOnDefaultDispatcher
-                DataStore.routeOutboundRule = profile.id
-                onMainDispatcher {
-                    outbound.value = "3"
-                }
+        if (resultCode == Activity.RESULT_OK) runOnDefaultDispatcher {
+            val profile = ProfileManager.getProfile(
+                data!!.getLongExtra(
+                    ProfileSelectActivity.EXTRA_PROFILE_ID, 0
+                )
+            ) ?: return@runOnDefaultDispatcher
+            DataStore.routeOutboundRule = profile.id
+            onMainDispatcher {
+                outbound.value = "3"
             }
         }
     }
