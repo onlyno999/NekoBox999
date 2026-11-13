@@ -641,6 +641,25 @@ fun buildConfig(
                 download_detour = TAG_PROXY
                 update_interval = "24h"
             })
+            // Play Store ahead of the China rule: its Google
+            // hosts ride the main line, or downloads stall at
+            // 99% on the direct path (same list the docs page
+            // tells NekoBox++ users to add by hand).
+            route.rules.add(Rule_DefaultOptions().apply {
+                domain_suffix = mutableListOf(
+                    "googleapis.com",
+                    "connectivitycheck.gstatic.com",
+                    "www.google.com",
+                    "play-fe.googleapis.com",
+                    "play-lh.googleusercontent.com",
+                    "playstoregatewayadapter-pa.googleapis.com",
+                    "services.googleapis.cn",
+                    "xn--ngstr-lra8j.com",
+                    "play.googleapis.com",
+                    "mtalk.google.com"
+                )
+                outbound = TAG_PROXY
+            })
             route.rules.add(Rule_DefaultOptions().apply {
                 rule_set = mutableListOf("geosite-cn", "geoip-cn")
                 outbound = TAG_DIRECT
