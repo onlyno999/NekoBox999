@@ -612,21 +612,24 @@ fun buildConfig(
             }
         }
 
-        // NekoBox999 built-in split rules, rule mode only: the
-        // V2 open geosite/geoip CN data from the upstream
-        // SagerNet rule-set repos. (A filtered mirror was tried
-        // on 2026-11-13 and reverted the same day on the
-        // owner's verdict: Play downloads still stalled at
-        // 99%.) The core fetches both sets through the main
-        // line and refreshes them daily. Mainland sites and
-        // IPs go direct; the rest falls through to the main
-        // line.
+        // NekoBox999 built-in split rules, rule mode only.
+        // Split sourcing (owner, 2026-11-13): the DOMAIN set
+        // comes from our filtered mirror
+        // (onlyno999/sing-rules-filtered: the upstream CN
+        // domain data republishes daily with every Google
+        // entry removed, because the raw data claims Google
+        // hosts and stalls Play Store downloads at 99% on
+        // the direct path), while the IP set stays on the
+        // upstream SagerNet repo, untouched. The core
+        // fetches both sets through the main line and
+        // refreshes them daily. Mainland sites and IPs go
+        // direct; the rest falls through to the main line.
         if (!forTest && NbConnectionMode.current() == NbConnectionMode.RULES) {
             route.rule_set.add(RuleSet().apply {
                 type = "remote"
                 tag = "geosite-cn"
                 format = "binary"
-                url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
+                url = "https://raw.githubusercontent.com/onlyno999/sing-rules-filtered/main/rule-set/geosite-cn.srs"
                 download_detour = TAG_PROXY
                 update_interval = "24h"
             })
