@@ -612,6 +612,34 @@ fun buildConfig(
             }
         }
 
+        // NekoBox999 built-in split rules, rule mode only: the V2
+        // open geosite/geoip data, delivered as remote rule sets
+        // the core downloads directly and refreshes daily.
+        // Mainland sites and IPs go direct; the rest falls
+        // through to the main line.
+        if (!forTest && NbConnectionMode.current() == NbConnectionMode.RULES) {
+            route.rule_set.add(RuleSet().apply {
+                type = "remote"
+                tag = "geosite-cn"
+                format = "binary"
+                url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
+                download_detour = TAG_DIRECT
+                update_interval = "24h"
+            })
+            route.rule_set.add(RuleSet().apply {
+                type = "remote"
+                tag = "geoip-cn"
+                format = "binary"
+                url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
+                download_detour = TAG_DIRECT
+                update_interval = "24h"
+            })
+            route.rules.add(Rule_DefaultOptions().apply {
+                rule_set = mutableListOf("geosite-cn", "geoip-cn")
+                outbound = TAG_DIRECT
+            })
+        }
+
         // 对 rule_set tag 去重
         if (route.rule_set != null) {
             route.rule_set = route.rule_set.distinctBy { it.tag }
