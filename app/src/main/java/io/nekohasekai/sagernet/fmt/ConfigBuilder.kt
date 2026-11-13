@@ -4,7 +4,6 @@ import android.widget.Toast
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.bg.VpnService
 import io.nekohasekai.sagernet.auth.NbConnectionMode
-import io.nekohasekai.sagernet.auth.NbRuleSets
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyEntity.Companion.TYPE_CONFIG
@@ -614,39 +613,34 @@ fun buildConfig(
         }
 
         // NekoBox999 built-in split rules, rule mode only: the
-        // V2 open geosite/geoip data. The CN IP set stays a
-        // remote rule set the core fetches through the main
-        // line and refreshes daily. The CN domain set is the
-        // app's own filtered local copy (see NbRuleSets): the
-        // raw data claims Google hosts, which stalls Play
-        // Store downloads, so the unfiltered set is never
-        // used; until the first filtered copy lands, the
-        // domain rule is simply left out. Mainland sites and
-        // IPs go direct; the rest falls through to the main
-        // line.
+        // V2 open geosite/geoip CN data, served from our own
+        // filtered mirror (onlyno999/sing-rules-filtered, which
+        // republishes the upstream sets daily with every
+        // Google entry removed: the raw CN data claims Google
+        // hosts, which stalls Play Store downloads when they
+        // land on the direct path). The core fetches both sets
+        // through the main line and refreshes them daily.
+        // Mainland sites and IPs go direct; the rest falls
+        // through to the main line.
         if (!forTest && NbConnectionMode.current() == NbConnectionMode.RULES) {
+            route.rule_set.add(RuleSet().apply {
+                type = "remote"
+                tag = "geosite-cn"
+                format = "binary"
+                url = "https://raw.githubusercontent.com/onlyno999/sing-rules-filtered/main/rule-set/geosite-cn.srs"
+                download_detour = TAG_PROXY
+                update_interval = "24h"
+            })
             route.rule_set.add(RuleSet().apply {
                 type = "remote"
                 tag = "geoip-cn"
                 format = "binary"
-                url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
+                url = "https://raw.githubusercontent.com/onlyno999/sing-rules-filtered/main/rule-set/geoip-cn.srs"
                 download_detour = TAG_PROXY
                 update_interval = "24h"
             })
-            val directSets = mutableListOf<String>()
-            val cnDomainFile = NbRuleSets.filteredFile(SagerNet.application)
-            if (cnDomainFile.exists() && cnDomainFile.length() > 0) {
-                route.rule_set.add(RuleSet().apply {
-                    type = "local"
-                    tag = "geosite-cn"
-                    format = "binary"
-                    path = cnDomainFile.absolutePath
-                })
-                directSets.add("geosite-cn")
-            }
-            directSets.add("geoip-cn")
             route.rules.add(Rule_DefaultOptions().apply {
-                rule_set = directSets
+                rule_set = mutableListOf("geosite-cn", "geoip-cn")
                 outbound = TAG_DIRECT
             })
         }
