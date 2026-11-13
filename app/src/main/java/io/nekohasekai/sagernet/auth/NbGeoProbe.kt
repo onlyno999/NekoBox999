@@ -11,6 +11,8 @@ import io.nekohasekai.sagernet.fmt.AbstractBean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -171,6 +173,14 @@ object NbGeoProbe {
         }
     }
 
+    /**
+     * Post-sync pass over the profiles whose region is still
+     * unknown — after a wholesale subscription sync those are
+     * exactly the nodes the update just brought in (known beans
+     * keep their stored country). Worked in batches of ten:
+     * region first, then latency, then the next batch; a batch
+     * holding a dead node or two changes nothing.
+     */
     suspend fun probe(context: Context, groupId: Long) = withContext(Dispatchers.IO) {
         val profiles = SagerDatabase.proxyDao.getByGroup(groupId)
         val targets = profiles.filter { profile ->
@@ -178,9 +188,16 @@ object NbGeoProbe {
             NbGeoStore.countryFor(context, bean) == null &&
                 !NbGeoStore.attemptedRecently(context, bean)
         }
-        probeProfiles(context, targets)
-        // Sections are rendered from the country store; just reload the list.
-        GroupManager.postReload(groupId)
+        if (targets.isEmpty()) return@withContext
+        Log.i(TAG, "post-sync: ${targets.size} new profiles, batches of 10")
+        for (chunk in targets.chunked(10)) {
+            probeProfiles(context, chunk)
+            chunk.map { profile ->
+                async { runCatching { NbLoadBalancer.testPing(profile) } }
+            }.awaitAll()
+            // Sections are rendered from the country store; reload per batch.
+            GroupManager.postReload(groupId)
+        }
     }
 
     /**

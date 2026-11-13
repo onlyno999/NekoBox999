@@ -93,6 +93,9 @@ object NbSubscriptionSync {
                     GroupManager.postReload(group.id)
                     NbAuthManager.markSynced(app)
                     // NekoBox999: probe node countries, then group by country.
+                    // Only the profiles this sync just brought in have
+                    // no known country, so only they get tested.
+                    NbGeoProbe.enqueue(app, group.id)
                     Result.Ok(beans.size)
                 }
             }

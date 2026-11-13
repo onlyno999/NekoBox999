@@ -10,4 +10,6 @@ interface ISagerNetService {
   oneway void unregisterCallback(in ISagerNetServiceCallback cb);
 
   int urlTest();
+  long queryDialFailures(String tag);
+  void resetDialHealth(String tag);
 }

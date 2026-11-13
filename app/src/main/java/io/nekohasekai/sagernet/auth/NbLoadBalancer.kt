@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.auth
 import android.content.Context
 import android.util.Log
 import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.aidl.ISagerNetService
 import io.nekohasekai.sagernet.bg.proto.GeoTest
 import io.nekohasekai.sagernet.bg.proto.UrlTest
 import io.nekohasekai.sagernet.database.DataStore
@@ -14,6 +15,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -24,13 +27,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Per-country load balancing for NekoBox999: one country section can
- * be marked "auto". A round URL-tests only that country's nodes,
- * selects the reachable one with the lowest latency, and (when the
- * service is running) switches the connection to it. Speed rounds
- * repeat every 10 minutes, whole-group region sweeps every 30,
- * and a 30-second watchdog swaps instantly from the recorded
- * results when the node in use dies twice in a row. The loop lives in the app
- * process; it resumes on the next app start while a country is active.
+ * be marked "auto". Since 1.3.15 the upkeep follows the standby
+ * model: rounds every 10 minutes test a rotating batch of FIVE of
+ * the active country's members and only refresh their records (a
+ * healthy line is never displaced for speed), and death is judged
+ * by the core itself — the sing-box fork counts consecutive failed
+ * dials of real traffic on the main line, the watchdog reads that
+ * number every 10 seconds through the service, and at 3 in a row
+ * the line is swapped at once to the best recorded standby.
+ * Whole-group region sweeps run every 30 minutes. The loop lives
+ * in the app process; it resumes on the next app start while a
+ * country is active.
  */
 object NbLoadBalancer {
 
@@ -39,7 +46,13 @@ object NbLoadBalancer {
     private const val KEY_COUNTRY = "lb_country"
     private const val SPEED_INTERVAL_MS = 10 * 60_000L
     private const val REGION_INTERVAL_MS = 30 * 60_000L
-    private const val WATCHDOG_MS = 30_000L
+    private const val WATCHDOG_MS = 10_000L
+    private const val BATCH_SIZE = 5
+    private const val DEATH_THRESHOLD = 3L
+
+    /** Tag of the general line in the generated config
+     *  (ConfigBuilder.TAG_PROXY). */
+    private const val MAIN_LINE_TAG = "proxy"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val roundRunning = AtomicBoolean(false)
@@ -57,8 +70,19 @@ object NbLoadBalancer {
     @Volatile
     private var watchdogJob: Job? = null
 
+    /**
+     * How the watchdog reaches the running service (its core
+     * holds the dial-health counters). Set by MainActivity; null
+     * whenever no activity is bound, in which case the watchdog
+     * simply skips — reading a number is all it ever does.
+     */
     @Volatile
-    private var watchdogFails = 0
+    var serviceProvider: (() -> ISagerNetService?)? = null
+
+    /** Selection the core's dial-health counter currently
+     *  belongs to; a change restarts the count. */
+    @Volatile
+    private var healthForSelected: Long = -1L
 
     fun activeCountry(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -73,7 +97,10 @@ object NbLoadBalancer {
             stopLoops()
         } else {
             ensureLoop(context)
-            scope.launch { runRound() }
+            scope.launch {
+                runRegionSweep()
+                pickForConnect()
+            }
         }
     }
 
@@ -81,7 +108,7 @@ object NbLoadBalancer {
         speedJob?.cancel(); speedJob = null
         regionJob?.cancel(); regionJob = null
         watchdogJob?.cancel(); watchdogJob = null
-        watchdogFails = 0
+        healthForSelected = -1L
     }
 
     /** Start the periodic loops if a country is active. */
@@ -114,34 +141,35 @@ object NbLoadBalancer {
     }
 
     /**
-     * Watchdog: every 30 s, touch the speed-test address through the
-     * node currently in use (one light test, nothing else). Two
-     * failures in a row mean it died mid-session: immediately race
-     * the active country again and switch to its fastest survivor.
+     * Watchdog, standby model: no probing at all. The core counts
+     * consecutive failed dials of REAL traffic on the main line
+     * (a handshake that never came back); this tick only reads
+     * that number through the service, every 10 seconds. At
+     * [DEATH_THRESHOLD] in a row the node in use is dead: swap at
+     * once to the best recorded standby of the active country. A
+     * change of selection restarts the count, so every member is
+     * judged on its own dials only. No traffic means no signal
+     * and no verdict — an idle line is left alone.
      */
     private suspend fun watchdogTick() {
         if (!DataStore.serviceState.connected) return
         if (activeCountry(app) == null) return
-        if (roundRunning.get()) return
+        val service = serviceProvider?.invoke() ?: return
         val groupId = managedGroupId() ?: return
-        val selected = withContext(Dispatchers.IO) {
-            SagerDatabase.proxyDao.getByGroup(groupId)
-                .firstOrNull { it.id == DataStore.selectedProxy }
-        } ?: return
-        if (testPing(selected)) {
-            watchdogFails = 0
-        } else {
-            watchdogFails++
-            Log.i(TAG, "watchdog: in-use node failed ($watchdogFails)")
-            if (watchdogFails >= 2) {
-                watchdogFails = 0
-                // Swap FIRST, from the recorded results, like a native
-                // urltest group does: the fastest other node the
-                // background rounds already know is reachable. The
-                // fresh race afterwards only refreshes the record.
-                failOverFromRecord(groupId, selected.id)
-                scope.launch { runSpeedRound() }
-            }
+        val selectedId = DataStore.selectedProxy
+        if (healthForSelected != selectedId) {
+            healthForSelected = selectedId
+            runCatching { service.resetDialHealth(MAIN_LINE_TAG) }
+            return
+        }
+        val failures = runCatching {
+            service.queryDialFailures(MAIN_LINE_TAG)
+        }.getOrDefault(0L)
+        if (failures >= DEATH_THRESHOLD) {
+            Log.i(TAG, "watchdog: line dead ($failures consecutive failed dials)")
+            failOverFromRecord(groupId, selectedId)
+            healthForSelected = -1L
+            scope.launch { runSpeedRound() }
         }
     }
 
@@ -179,7 +207,7 @@ object NbLoadBalancer {
         }?.id
     }
 
-    /** A full pass: whole-group region sweep, then the speed race. */
+    /** A full pass: whole-group region sweep, then a standby batch. */
     suspend fun runRound() {
         runRegionSweep()
         runSpeedRound()
@@ -235,7 +263,15 @@ object NbLoadBalancer {
         }
     }
 
-    /** Speed-test the active country's members and pick the fastest. */
+    /**
+     * Standby round: test the next [BATCH_SIZE] members of the
+     * active country, rotating through it round by round, and
+     * refresh their records. The results only stock the standby
+     * shelf — this round NEVER moves the main connection: a
+     * healthy line keeps its node until the core's dial health
+     * condemns it. A country of five or fewer is covered whole
+     * in one round.
+     */
     suspend fun runSpeedRound() {
         if (!roundRunning.compareAndSet(false, true)) return
         val doneSignal = kotlinx.coroutines.CompletableDeferred<Unit>()
@@ -248,48 +284,27 @@ object NbLoadBalancer {
             }
             val members = all.filter {
                 NbGeoStore.countryFor(app, it.requireBean()) == cc
-            }
+            }.sortedBy { it.id }
             if (members.isEmpty()) {
-                Log.i(TAG, "round for $cc: no members")
+                Log.i(TAG, "standby round for $cc: no members")
                 return
             }
-            Log.i(TAG, "round for $cc over ${members.size} profiles")
-
-            val queue = ConcurrentLinkedQueue(members)
-            val eligible = ConcurrentLinkedQueue<ProxyEntity>()
-            val workers = mutableListOf<Job>()
-            val concurrent = DataStore.connectionTestConcurrent.coerceIn(1, 16)
-            repeat(concurrent) {
-                workers.add(scope.launch {
-                    while (true) {
-                        val profile = queue.poll() ?: break
-                        if (testPing(profile)) {
-                            eligible.add(profile)
-                        }
-                    }
-                })
+            val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val cursorKey = "rot|$groupId|$cc"
+            val lastId = prefs.getLong(cursorKey, -1L)
+            val startIdx = members.indexOfFirst { it.id > lastId }
+                .let { if (it < 0) 0 else it }
+            val batch = (0 until minOf(BATCH_SIZE, members.size))
+                .map { members[(startIdx + it) % members.size] }
+            Log.i(TAG, "standby batch for $cc: ${batch.size} of ${members.size} profiles")
+            withContext(Dispatchers.IO) {
+                batch.map { profile ->
+                    async { runCatching { testPing(profile) } }
+                }.awaitAll()
             }
-            workers.forEach { it.join() }
-
-            val best = eligible.minByOrNull { it.ping }
-            if (best == null) {
-                Log.i(TAG, "round for $cc: nothing reachable")
-                return
-            }
-            if (DataStore.selectedProxy != best.id) {
-                val previous = DataStore.selectedProxy
-                DataStore.selectedProxy = best.id
-                ProfileManager.postUpdate(previous)
-                ProfileManager.postUpdate(best.id)
-                Log.i(TAG, "auto-connect -> ${best.requireBean().displayName()} (${best.ping}ms)")
-                if (DataStore.serviceState.canStop) {
-                    SagerNet.reloadService()
-                }
-            } else {
-                Log.i(TAG, "round for $cc: staying on ${best.requireBean().displayName()} (${best.ping}ms)")
-            }
+            prefs.edit().putLong(cursorKey, batch.last().id).apply()
         } catch (e: Exception) {
-            Log.w(TAG, "round failed", e)
+            Log.w(TAG, "standby round failed", e)
         } finally {
             roundRunning.set(false)
             doneSignal.complete(Unit)
@@ -297,12 +312,11 @@ object NbLoadBalancer {
     }
 
     /**
-     * Connect-time pick: do NOT wait for a fresh round. The round
-     * that started when the user switched the country to auto has
-     * already measured everyone, so connect immediately to the
-     * best known node of the active country, then let a background
-     * round refresh regions and speeds (it switches over if it
-     * finds something better).
+     * Connect-time pick: do NOT wait for a fresh round. Connect
+     * immediately to the best known node of the active country
+     * from the recorded results (keeping the current selection
+     * when it already sits in the country), then let a background
+     * standby round keep the records fresh.
      */
     suspend fun pickForConnect() {
         val cc = activeCountry(app) ?: return
@@ -332,7 +346,7 @@ object NbLoadBalancer {
     }
 
     /** Speed-test one candidate of the active country. */
-    private suspend fun testPing(profile: ProxyEntity): Boolean {
+    internal suspend fun testPing(profile: ProxyEntity): Boolean {
         return try {
             val result = UrlTest().doTest(profile)
             profile.status = 1

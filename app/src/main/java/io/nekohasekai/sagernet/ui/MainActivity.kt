@@ -89,6 +89,9 @@ class MainActivity : ThemedActivity(),
             }
         }
         // NekoBox999: resume the country load-balancer loop if one is active.
+        // The watchdog reads the core's dial-health through the
+        // service, which only this activity's connection can reach.
+        io.nekohasekai.sagernet.auth.NbLoadBalancer.serviceProvider = { connection.service }
         io.nekohasekai.sagernet.auth.NbLoadBalancer.ensureLoop(this)
         // NekoBox999: geo route assets auto-update (first open, then daily).
         lifecycleScope.launch {
