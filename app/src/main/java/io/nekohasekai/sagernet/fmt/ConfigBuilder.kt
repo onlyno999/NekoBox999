@@ -623,7 +623,7 @@ fun buildConfig(
                 tag = "geosite-cn"
                 format = "binary"
                 url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
-                download_detour = TAG_DIRECT
+                download_detour = TAG_PROXY
                 update_interval = "24h"
             })
             route.rule_set.add(RuleSet().apply {
@@ -631,7 +631,7 @@ fun buildConfig(
                 tag = "geoip-cn"
                 format = "binary"
                 url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
-                download_detour = TAG_DIRECT
+                download_detour = TAG_PROXY
                 update_interval = "24h"
             })
             route.rules.add(Rule_DefaultOptions().apply {
