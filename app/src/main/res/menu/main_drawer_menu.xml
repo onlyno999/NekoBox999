@@ -53,4 +53,11 @@
             android:title="一键测速" />
     </group>
 
+    <group>
+        <item
+            android:id="@+id/nav_connection_mode"
+            android:icon="@drawable/ic_maps_directions"
+            android:title="连接模式" />
+    </group>
+
 </menu>

@@ -29,6 +29,8 @@ import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.aidl.ISagerNetService
 import io.nekohasekai.sagernet.aidl.SpeedDisplayData
 import io.nekohasekai.sagernet.aidl.TrafficData
+import android.widget.Toast
+import io.nekohasekai.sagernet.auth.NbConnectionMode
 import io.nekohasekai.sagernet.auth.NbLoadBalancer
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.bg.SagerConnection
@@ -216,6 +218,27 @@ class MainActivity : ThemedActivity(),
         return connection.service!!.urlTest()
     }
 
+    // NekoBox999: drawer connection-mode entry. The default on a
+    // fresh install is rule mode; switching while connected
+    // reloads the service so the new mode applies at once.
+    private fun nbShowConnectionModeDialog() {
+        val modes = arrayOf(
+            NbConnectionMode.label(NbConnectionMode.RULES),
+            NbConnectionMode.label(NbConnectionMode.GLOBAL),
+            NbConnectionMode.label(NbConnectionMode.DIRECT),
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("连接模式")
+            .setSingleChoiceItems(modes, NbConnectionMode.current(this)) { dialog, which ->
+                NbConnectionMode.set(this, which)
+                dialog.dismiss()
+                Toast.makeText(this, "连接模式：" + modes[which], Toast.LENGTH_SHORT).show()
+                if (DataStore.serviceState.canStop) SagerNet.reloadService()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     suspend fun importSubscription(uri: Uri) {
         val group: ProxyGroup
 
@@ -389,6 +412,11 @@ class MainActivity : ThemedActivity(),
 
             R.id.nav_url_test -> {
                 configAction { it.nbUrlTest() }
+                return true
+            }
+
+            R.id.nav_connection_mode -> {
+                nbShowConnectionModeDialog()
                 return true
             }
 

@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.fmt
 import android.widget.Toast
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.bg.VpnService
+import io.nekohasekai.sagernet.auth.NbConnectionMode
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyEntity.Companion.TYPE_CONFIG
@@ -123,7 +124,10 @@ fun buildConfig(
         return list
     }
 
-    val extraRules = if (forTest) listOf() else SagerDatabase.rulesDao.enabledRules()
+    // NekoBox999 connection mode: outside rule mode the user
+    // route rules (and the extra outbounds they reference) are
+    // left out of the config entirely.
+    val extraRules = if (forTest || NbConnectionMode.current() != NbConnectionMode.RULES) listOf() else SagerDatabase.rulesDao.enabledRules()
     val extraProxies =
         if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.mapNotNull { rule ->
             rule.outbound.takeIf { it > 0 && it != proxy.id }
@@ -242,6 +246,11 @@ fun buildConfig(
             auto_detect_interface = true
             rules = mutableListOf()
             rule_set = mutableListOf()
+            // Direct mode: everything the built-in rules do not
+            // claim ends at the direct outbound.
+            if (!forTest && NbConnectionMode.current() == NbConnectionMode.DIRECT) {
+                final_ = TAG_DIRECT
+            }
         }
 
         // returns outbound tag
