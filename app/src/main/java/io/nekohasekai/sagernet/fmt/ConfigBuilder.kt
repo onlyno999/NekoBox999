@@ -638,6 +638,24 @@ fun buildConfig(
                 download_detour = TAG_PROXY
                 update_interval = "24h"
             })
+            // Play Store and Google services traffic is pinned
+            // to the main line by app uid, ahead of the domain
+            // and IP rules below: Play payload downloads often
+            // arrive as bare IPs that CN IP data claims, which
+            // stalls them near completion. Matching by app makes
+            // the download immune to every address rule.
+            PackageCache.awaitLoadSync()
+            val playUids = listOf(
+                "com.android.vending",
+                "com.google.android.gms",
+                "com.google.android.gsf",
+            ).mapNotNull { PackageCache[it]?.takeIf { uid -> uid >= 1000 } }
+            if (playUids.isNotEmpty()) {
+                route.rules.add(Rule_DefaultOptions().apply {
+                    user_id = playUids
+                    outbound = TAG_PROXY
+                })
+            }
             route.rules.add(Rule_DefaultOptions().apply {
                 rule_set = mutableListOf("geosite-google")
                 outbound = TAG_PROXY
