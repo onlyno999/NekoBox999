@@ -632,14 +632,6 @@ fun buildConfig(
             })
             route.rule_set.add(RuleSet().apply {
                 type = "remote"
-                tag = "geosite-cn"
-                format = "binary"
-                url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
-                download_detour = TAG_PROXY
-                update_interval = "24h"
-            })
-            route.rule_set.add(RuleSet().apply {
-                type = "remote"
                 tag = "geoip-cn"
                 format = "binary"
                 url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
@@ -651,7 +643,7 @@ fun buildConfig(
                 outbound = TAG_PROXY
             })
             route.rules.add(Rule_DefaultOptions().apply {
-                rule_set = mutableListOf("geosite-cn", "geoip-cn")
+                rule_set = mutableListOf("geoip-cn")
                 outbound = TAG_DIRECT
             })
         }
