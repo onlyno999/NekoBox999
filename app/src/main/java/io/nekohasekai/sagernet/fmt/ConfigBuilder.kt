@@ -613,21 +613,20 @@ fun buildConfig(
         }
 
         // NekoBox999 built-in split rules, rule mode only: the
-        // V2 open geosite/geoip CN data, served from our own
-        // filtered mirror (onlyno999/sing-rules-filtered, which
-        // republishes the upstream sets daily with every
-        // Google entry removed: the raw CN data claims Google
-        // hosts, which stalls Play Store downloads when they
-        // land on the direct path). The core fetches both sets
-        // through the main line and refreshes them daily.
-        // Mainland sites and IPs go direct; the rest falls
-        // through to the main line.
+        // V2 open geosite/geoip CN data from the upstream
+        // SagerNet rule-set repos. (A filtered mirror was tried
+        // on 2026-11-13 and reverted the same day on the
+        // owner's verdict: Play downloads still stalled at
+        // 99%.) The core fetches both sets through the main
+        // line and refreshes them daily. Mainland sites and
+        // IPs go direct; the rest falls through to the main
+        // line.
         if (!forTest && NbConnectionMode.current() == NbConnectionMode.RULES) {
             route.rule_set.add(RuleSet().apply {
                 type = "remote"
                 tag = "geosite-cn"
                 format = "binary"
-                url = "https://raw.githubusercontent.com/onlyno999/sing-rules-filtered/main/rule-set/geosite-cn.srs"
+                url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
                 download_detour = TAG_PROXY
                 update_interval = "24h"
             })
@@ -635,7 +634,7 @@ fun buildConfig(
                 type = "remote"
                 tag = "geoip-cn"
                 format = "binary"
-                url = "https://raw.githubusercontent.com/onlyno999/sing-rules-filtered/main/rule-set/geoip-cn.srs"
+                url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
                 download_detour = TAG_PROXY
                 update_interval = "24h"
             })
