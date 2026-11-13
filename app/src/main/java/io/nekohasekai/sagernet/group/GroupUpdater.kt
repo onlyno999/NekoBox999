@@ -187,6 +187,10 @@ abstract class GroupUpdater {
                             }
                         }
                     }
+                    runCatching {
+                        io.nekohasekai.sagernet.auth.NbLoadBalancer
+                            .onPoolMembersDeleted(setOf(proxyGroup.id))
+                    }
                     true
                 } catch (e: Throwable) {
                     Logs.w(e)

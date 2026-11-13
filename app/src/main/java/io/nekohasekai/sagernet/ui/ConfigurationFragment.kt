@@ -130,6 +130,9 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     interface SelectCallback {
         fun returnProfile(profileId: Long)
+
+        /** Route picker: a country section's load balancer was chosen. */
+        fun returnLbOutbound(encoded: Long) {}
     }
 
     lateinit var adapter: GroupPagerAdapter
@@ -405,6 +408,11 @@ class ConfigurationFragment @JvmOverloads constructor(
                                             .repickSelectionForGroup(gid)
                                     }
                                 }
+                            }
+                            runCatching {
+                                NbLoadBalancer.onPoolMembersDeleted(
+                                    toClear.map { it.groupId }.toSet()
+                                )
                             }
                         }
                     }
@@ -1411,6 +1419,13 @@ class ConfigurationFragment @JvmOverloads constructor(
                             NbLoadBalancer.repickSelectionForGroup(proxyGroup.id)
                         }
                     }
+                    // If a route rule load-balances over this
+                    // group, the running pool still lists the
+                    // deleted profiles as members; reload so
+                    // the pool drops them and re-picks a carrier.
+                    runCatching {
+                        NbLoadBalancer.onPoolMembersDeleted(setOf(proxyGroup.id))
+                    }
                 }
             }
 
@@ -1585,10 +1600,24 @@ class ConfigurationFragment @JvmOverloads constructor(
                 )
                 lbText.setTypeface(null, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                 lbText.setOnClickListener {
-                    io.nekohasekai.sagernet.auth.NbLoadBalancer.setActive(
-                        view.context, if (active) null else header.key
-                    )
-                    adapter?.notifyDataSetChanged()
+                    if (select) {
+                        // Route-rule picker: choosing this country binds
+                        // the rule to that country's own load-balance
+                        // pool (a config-level urltest outbound). It is
+                        // independent of the front-page balancer state,
+                        // which this must not touch.
+                        val frag = parentFragment as? ConfigurationFragment
+                        (frag?.requireActivity() as? SelectCallback)
+                            ?.returnLbOutbound(
+                                io.nekohasekai.sagernet.geo.LbRef
+                                    .encode(proxyGroup.id, header.key)
+                            )
+                    } else {
+                        io.nekohasekai.sagernet.auth.NbLoadBalancer.setActive(
+                            view.context, if (active) null else header.key
+                        )
+                        adapter?.notifyDataSetChanged()
+                    }
                 }
             }
         }

@@ -265,6 +265,39 @@ object NbLoadBalancer {
         }
     }
 
+    /**
+     * Profiles were just deleted for real. When a route rule
+     * load-balances over a pool of one of the affected groups,
+     * the running config still lists the deleted profiles as
+     * pool members: routed traffic keeps aiming at a ghost, no
+     * surviving member takes over and none shows any usage.
+     * Reload so the pool is rebuilt from the surviving members
+     * and the core re-picks a carrier. True when reloaded.
+     * Synced from NekoBox++ (field-verified there).
+     */
+    suspend fun onPoolMembersDeleted(groupIds: Set<Long>): Boolean {
+        if (groupIds.isEmpty()) return false
+        if (!DataStore.serviceState.canStop) return false
+        val referenced = withContext(Dispatchers.IO) {
+            runCatching {
+                SagerDatabase.rulesDao.enabledRules().any { rule ->
+                    io.nekohasekai.sagernet.geo.LbRef.isLb(rule.outbound) &&
+                        io.nekohasekai.sagernet.geo.LbRef
+                            .groupId(rule.outbound) in groupIds
+                }
+            }.getOrDefault(false)
+        }
+        if (!referenced) return false
+        Log.i(TAG, "pool member deleted; reloading so the pool re-picks")
+        runCatching {
+            io.nekohasekai.sagernet.ktx.Logs.i(
+                "pool member deleted; reloading so the pool re-picks"
+            )
+        }
+        SagerNet.reloadService()
+        return true
+    }
+
     private suspend fun managedGroupId(): Long? = withContext(Dispatchers.IO) {
         SagerDatabase.groupDao.allGroups().firstOrNull { group ->
             group.subscription?.link?.let { NbAuthManager.isManagedLink(it) } == true

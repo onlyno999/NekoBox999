@@ -105,6 +105,12 @@ object NbSubscriptionSync {
                             NbLoadBalancer.repickSelectionForGroup(group.id)
                         }
                     }
+                    // The whole group was just replaced: if a
+                    // route rule load-balances over it, reload so
+                    // the pool drops the vanished members.
+                    runCatching {
+                        NbLoadBalancer.onPoolMembersDeleted(setOf(group.id))
+                    }
                     GroupManager.postReload(group.id)
                     NbAuthManager.markSynced(app)
                     // NekoBox999: probe node countries, then group by country.

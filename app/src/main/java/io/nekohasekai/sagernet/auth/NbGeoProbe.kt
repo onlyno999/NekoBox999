@@ -41,6 +41,12 @@ object NbGeoStore {
     @Volatile
     private var tryCache: MutableMap<String, Long>? = null
 
+    /** Drop the in-memory snapshots (service-process builders call this). */
+    fun invalidateCache() {
+        cache = null
+        tryCache = null
+    }
+
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
