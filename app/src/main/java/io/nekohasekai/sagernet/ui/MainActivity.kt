@@ -101,6 +101,11 @@ class MainActivity : ThemedActivity(),
                 io.nekohasekai.sagernet.auth.NbAssetUpdater.updateAll(this@MainActivity)
             }
         }
+        // NekoBox999: keep the filtered CN domain rule set fresh
+        // (first open, then daily; see NbRuleSets).
+        Thread {
+            io.nekohasekai.sagernet.auth.NbRuleSets.ensureFresh(applicationContext)
+        }.start()
         if (io.nekohasekai.sagernet.auth.NbAuthManager.entryCheckDue(this) ||
             io.nekohasekai.sagernet.auth.NbAuthManager.validationDue(this)
         ) {
@@ -470,6 +475,13 @@ class MainActivity : ThemedActivity(),
         animate: Boolean = false,
     ) {
         DataStore.serviceState = state
+        if (state == BaseService.State.Connected) {
+            // A working line is the best moment to refresh the
+            // filtered CN domain rule set for the next connect.
+            Thread {
+                io.nekohasekai.sagernet.auth.NbRuleSets.ensureFresh(applicationContext)
+            }.start()
+        }
 
         binding.fab.changeState(state, DataStore.serviceState, animate)
         binding.stats.changeState(state)
