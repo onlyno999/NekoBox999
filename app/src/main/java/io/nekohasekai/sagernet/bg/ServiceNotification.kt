@@ -47,6 +47,18 @@ class ServiceNotification(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
 
         fun genTitle(ent: ProxyEntity): String {
+            // NekoBox999: like NekoBox++, the measured region
+            // goes in front, then the node name. Falls back
+            // to the group format when the region is unknown.
+            val cc = runCatching {
+                io.nekohasekai.sagernet.auth.NbGeoStore.countryFor(
+                    SagerNet.application, ent.requireBean()
+                )
+            }.getOrNull()
+            if (!cc.isNullOrBlank()) {
+                return io.nekohasekai.sagernet.auth.NbGeoStore.countryTitle(cc) +
+                    " " + ent.displayName()
+            }
             val gn = if (DataStore.showGroupInNotification)
                 SagerDatabase.groupDao.getById(ent.groupId)?.displayName() else null
             return if (gn == null) ent.displayName() else "[$gn] ${ent.displayName()}"
@@ -118,7 +130,7 @@ class ServiceNotification(
         .setContentTitle(title)
         .setOnlyAlertOnce(true)
         .setContentIntent(SagerNet.configureIntent(service))
-        .setSmallIcon(R.drawable.ic_service_active)
+        .setSmallIcon(R.drawable.ic_service_artwork)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setPriority(if (visible) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
 
