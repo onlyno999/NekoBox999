@@ -124,16 +124,22 @@ object NbLoadBalancer {
     @Volatile
     private var lastNetSweepAt = 0L
 
+    @Volatile
+    private var lastLinkAddrs: String? = null
+
     /**
-     * Whenever the default network changes (Wi-Fi to mobile
-     * data, a new Wi-Fi, a reconnect), run one whole-group
-     * region sweep in the background: exits move with the
-     * network, so the sections should be re-filed against
-     * the new one. Regions only — never a speed round.
-     * Registered once per process; the network present at
-     * registration is the baseline, so only genuine changes
-     * fire. A short cooldown keeps flapping networks from
-     * sweeping back to back.
+     * Whenever the network changes — a different network
+     * entirely (Wi-Fi to mobile data, Telecom to Unicom,
+     * a new Wi-Fi) or the same network handing out new
+     * addresses (4G to 5G style handovers) — run one
+     * whole-group region sweep in the background: the exit
+     * addresses move with the network, so everything is
+     * re-filed against the new one. Regions only, never a
+     * speed round — the connected line already swaps
+     * itself after three dead dials. Registered once per
+     * process; the state at registration is the baseline,
+     * so only genuine changes fire. A short cooldown keeps
+     * flapping networks from sweeping back to back.
      */
     fun watchNetwork(context: Context) {
         if (!netWatchRegistered.compareAndSet(false, true)) return
@@ -146,13 +152,20 @@ object NbLoadBalancer {
                     override fun onAvailable(network: android.net.Network) {
                         if (network == lastNetwork) return
                         lastNetwork = network
-                        val now = System.currentTimeMillis()
-                        if (now - lastNetSweepAt < NET_SWEEP_COOLDOWN_MS) return
-                        lastNetSweepAt = now
-                        scope.launch {
-                            delay(NET_SETTLE_MS)
-                            runRegionSweep()
-                        }
+                        fireNetSweep()
+                    }
+
+                    override fun onLinkPropertiesChanged(
+                        network: android.net.Network,
+                        lp: android.net.LinkProperties
+                    ) {
+                        val addrs = lp.linkAddresses
+                            .mapNotNull { it.address.hostAddress }
+                            .sorted()
+                            .joinToString(",")
+                        val prev = lastLinkAddrs
+                        lastLinkAddrs = addrs
+                        if (prev != null && prev != addrs) fireNetSweep()
                     }
 
                     override fun onLost(network: android.net.Network) {
@@ -161,6 +174,16 @@ object NbLoadBalancer {
                 }
             )
         }.onFailure { Log.w(TAG, "network watch failed", it) }
+    }
+
+    private fun fireNetSweep() {
+        val now = System.currentTimeMillis()
+        if (now - lastNetSweepAt < NET_SWEEP_COOLDOWN_MS) return
+        lastNetSweepAt = now
+        scope.launch {
+            delay(NET_SETTLE_MS)
+            runRegionSweep()
+        }
     }
 
     /** Start the periodic loops if a country is active. */
