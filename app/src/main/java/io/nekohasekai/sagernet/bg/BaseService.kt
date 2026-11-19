@@ -149,8 +149,15 @@ class BaseService {
         @Volatile
         var lastSpeedData: SpeedDisplayData? = null
 
+        @Volatile
+        var lastSelectedSpeedData: SpeedDisplayData? = null
+
         override fun querySpeed(): SpeedDisplayData {
             return lastSpeedData ?: SpeedDisplayData()
+        }
+
+        override fun querySelectedSpeed(): SpeedDisplayData {
+            return lastSelectedSpeedData ?: SpeedDisplayData()
         }
 
         override fun resetDialHealth(tag: String) {

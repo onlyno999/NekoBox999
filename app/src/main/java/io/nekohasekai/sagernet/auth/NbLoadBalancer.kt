@@ -5,6 +5,7 @@ import android.util.Log
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.aidl.ISagerNetService
 import io.nekohasekai.sagernet.bg.proto.GeoTest
+import io.nekohasekai.sagernet.bg.proto.TestInstance
 import io.nekohasekai.sagernet.bg.proto.UrlTest
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProfileManager
@@ -86,6 +87,7 @@ object NbLoadBalancer {
     private var stallSampleFor: Long = -1L
     private var lastTxTotal: Long = 0L
     private var lastRxTotal: Long = 0L
+    private var lastStallFailoverAt: Long = 0L
 
     fun activeCountry(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -268,7 +270,7 @@ object NbLoadBalancer {
     private suspend fun stallCheckTick(
         groupId: Long, selectedId: Long, service: ISagerNetService,
     ) {
-        val speed = runCatching { service.querySpeed() }.getOrNull() ?: return
+        val speed = runCatching { service.querySelectedSpeed() }.getOrNull() ?: return
         if (stallSampleFor != selectedId) {
             stallSampleFor = selectedId
             lastTxTotal = speed.txTotal
@@ -279,19 +281,51 @@ object NbLoadBalancer {
         val recvDelta = speed.rxTotal - lastRxTotal
         lastTxTotal = speed.txTotal
         lastRxTotal = speed.rxTotal
-        if (sentDelta <= 0L || recvDelta != 0L) return
+        // A real stall moves data: ignore trickle sends
+        // (keepalives, background chatter) under 10 KB a window.
+        if (sentDelta < 10_240L || recvDelta != 0L) return
         // Never fight a standby round for the test machinery;
         // the next tick re-evaluates with fresh totals.
         if (roundRunning.get()) return
+        // One failover restarts the service; a 3-minute cooldown
+        // after each keeps a flaky node from restart-storming the
+        // session.
+        val now = System.currentTimeMillis()
+        if (now - lastStallFailoverAt < 180_000L) return
         val profile = withContext(Dispatchers.IO) {
             SagerDatabase.proxyDao.getById(selectedId)
         } ?: return
-        val ok = runCatching { testPing(profile) }.getOrDefault(false)
-        if (ok) {
+        // Confirm twice, 3 s timeout each: a healthy node passes
+        // at least one probe; only a node that answers neither is
+        // judged stalled. One flaky cold-start probe must not be
+        // enough to restart the service.
+        val link = DataStore.connectionTestURL
+        val probe1 = runCatching {
+            TestInstance(profile, link, 3000).doTest()
+        }.isSuccess
+        if (probe1) {
             Log.i(TAG, "stall check: sent $sentDelta B, 0 B back, probe live; not the node")
+            io.nekohasekai.sagernet.ktx.Logs.i(
+                "NB9 stall check: 0 B back but probe live; not switching"
+            )
             return
         }
-        Log.i(TAG, "stall check: sent $sentDelta B, 0 B back, probe timed out; failing over")
+        kotlinx.coroutines.delay(1000)
+        val probe2 = runCatching {
+            TestInstance(profile, link, 3000).doTest()
+        }.isSuccess
+        if (probe2) {
+            Log.i(TAG, "stall check: first probe timed out, second live; not the node")
+            io.nekohasekai.sagernet.ktx.Logs.i(
+                "NB9 stall check: probe flaky but live; not switching"
+            )
+            return
+        }
+        Log.i(TAG, "stall check: sent $sentDelta B, 0 B back, probes timed out; failing over")
+        io.nekohasekai.sagernet.ktx.Logs.i(
+            "NB9 stall check: node not returning data, probes timed out; switching node"
+        )
+        lastStallFailoverAt = System.currentTimeMillis()
         failOverFromRecord(groupId, selectedId)
         healthForSelected = -1L
         stallSampleFor = -1L

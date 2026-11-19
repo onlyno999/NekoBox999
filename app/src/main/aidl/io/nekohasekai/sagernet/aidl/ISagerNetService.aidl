@@ -14,4 +14,5 @@ interface ISagerNetService {
   long queryDialFailures(String tag);
   void resetDialHealth(String tag);
   SpeedDisplayData querySpeed();
+  SpeedDisplayData querySelectedSpeed();
 }
