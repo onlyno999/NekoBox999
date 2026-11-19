@@ -158,6 +158,8 @@ class TrafficLooper
                 mainRx
             )
 
+            data.binder.lastSpeedData = speed
+
             // broadcast (MainActivity)
             if (data.state == BaseService.State.Connected
                 && data.binder.callbackIdMap.containsValue(SagerConnection.CONNECTION_ID_MAIN_ACTIVITY_FOREGROUND)
