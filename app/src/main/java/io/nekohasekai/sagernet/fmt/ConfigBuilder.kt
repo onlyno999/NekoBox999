@@ -488,7 +488,7 @@ fun buildConfig(
                 }.mapNotNull { tagMap[it.id] }
                 if (memberTags.size >= 2) {
                     raceTag = "lb-main"
-                    outbounds.add(URLTestOutboundOptions().apply {
+                    outbounds.add(Outbound_URLTestOptions().apply {
                         type = "urltest"
                         tag = raceTag
                         outbounds = memberTags

@@ -158,8 +158,6 @@ public class SingBoxOptions {
 
         public Integer tolerance;
 
-        public Boolean race;
-
     }
 
 
@@ -4386,6 +4384,8 @@ public class SingBoxOptions {
         public Long interval;
 
         public Integer tolerance;
+
+        public Boolean race;
 
     }
 
