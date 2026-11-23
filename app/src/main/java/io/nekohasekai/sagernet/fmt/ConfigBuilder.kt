@@ -134,7 +134,20 @@ fun buildConfig(
         if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.mapNotNull { rule ->
             rule.outbound.takeIf { it > 0 && it != proxy.id }
         }.toHashSet().toList()).associateBy { it.id }
-    val buildSelector = !forTest && group?.isSelector == true && !forExport
+    // Race edition: groups are not selector groups by default in
+    // this app, so with a balancer country active the selected
+    // profile alone would become the whole config and nothing
+    // could race. When the current group has at least two members
+    // in the active country, build the full selector anyway so
+    // the racing urltest below can steer the main line.
+    val raceActiveCc = NbLoadBalancer.activeCountry(SagerNet.application)
+    val racePoolSize = if (raceActiveCc != null && group != null) {
+        SagerDatabase.proxyDao.getByGroup(group.id).count {
+            NbGeoStore.countryFor(SagerNet.application, it.requireBean()) == raceActiveCc
+        }
+    } else 0
+    val buildSelector = !forTest && !forExport &&
+        (group?.isSelector == true || racePoolSize >= 2)
     val userDNSRuleList = mutableListOf<DNSRule_DefaultOptions>()
     val domainListDNSDirectForce = mutableListOf<String>()
     val bypassDNSBeans = hashSetOf<AbstractBean>()
