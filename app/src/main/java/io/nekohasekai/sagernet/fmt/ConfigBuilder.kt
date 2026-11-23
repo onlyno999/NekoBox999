@@ -506,7 +506,6 @@ fun buildConfig(
                         tag = raceTag
                         outbounds = memberTags
                         url = "https://www.gstatic.com/generate_204"
-                        interval = 600L
                         race = true
                     })
                 }
