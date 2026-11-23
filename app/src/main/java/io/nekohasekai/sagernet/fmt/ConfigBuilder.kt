@@ -4,6 +4,8 @@ import android.widget.Toast
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.bg.VpnService
 import io.nekohasekai.sagernet.auth.NbConnectionMode
+import io.nekohasekai.sagernet.auth.NbGeoStore
+import io.nekohasekai.sagernet.auth.NbLoadBalancer
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyEntity.Companion.TYPE_CONFIG
@@ -474,11 +476,33 @@ fun buildConfig(
             list.forEach {
                 tagMap[it.id] = buildChain(it.id, it)
             }
+            // Race edition: while a balancer country is active, steer
+            // the selector's default through a racing urltest over that
+            // country's members of this group. Manual picks stay in the
+            // selector and override it until the next reload.
+            var raceTag: String? = null
+            val activeCc = NbLoadBalancer.activeCountry(SagerNet.application)
+            if (activeCc != null) {
+                val memberTags = list.filter {
+                    NbGeoStore.countryFor(SagerNet.application, it.requireBean()) == activeCc
+                }.mapNotNull { tagMap[it.id] }
+                if (memberTags.size >= 2) {
+                    raceTag = "lb-main"
+                    outbounds.add(URLTestOutboundOptions().apply {
+                        type = "urltest"
+                        tag = raceTag
+                        outbounds = memberTags
+                        url = "https://www.gstatic.com/generate_204"
+                        interval = 600L
+                        race = true
+                    })
+                }
+            }
             outbounds.add(0, Outbound_SelectorOptions().apply {
                 type = "selector"
                 tag = TAG_PROXY
-                default_ = tagMap[proxy.id]
-                outbounds = tagMap.values.toList()
+                default_ = raceTag ?: tagMap[proxy.id]
+                outbounds = listOfNotNull(raceTag) + tagMap.values.toList()
             })
         } else {
             buildChain(0, proxy)
