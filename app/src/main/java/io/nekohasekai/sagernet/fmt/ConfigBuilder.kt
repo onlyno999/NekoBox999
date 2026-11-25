@@ -4,6 +4,8 @@ import android.widget.Toast
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.bg.VpnService
 import io.nekohasekai.sagernet.auth.NbConnectionMode
+import io.nekohasekai.sagernet.auth.NbGeoStore
+import io.nekohasekai.sagernet.auth.NbLoadBalancer
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyEntity.Companion.TYPE_CONFIG
@@ -132,7 +134,22 @@ fun buildConfig(
         if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.mapNotNull { rule ->
             rule.outbound.takeIf { it > 0 && it != proxy.id }
         }.toHashSet().toList()).associateBy { it.id }
-    val buildSelector = !forTest && group?.isSelector == true && !forExport
+    // Official edition: groups are not selector groups by default in
+    // this app, so with a balancer country active the selected
+    // profile alone would become the whole config and nothing
+    // could steer the main line. When the current group has at least
+    // two members in the active country, build the full selector
+    // anyway so the urltest below can pick the lowest-latency
+    // member. (Race edition sets race = true on that urltest for
+    // concurrent dial; official leaves it false.)
+    val raceActiveCc = NbLoadBalancer.activeCountry(SagerNet.application)
+    val racePoolSize = if (raceActiveCc != null && group != null) {
+        SagerDatabase.proxyDao.getByGroup(group.id).count {
+            NbGeoStore.countryFor(SagerNet.application, it.requireBean()) == raceActiveCc
+        }
+    } else 0
+    val buildSelector = !forTest && !forExport &&
+        (group?.isSelector == true || racePoolSize >= 2)
     val userDNSRuleList = mutableListOf<DNSRule_DefaultOptions>()
     val domainListDNSDirectForce = mutableListOf<String>()
     val bypassDNSBeans = hashSetOf<AbstractBean>()
@@ -474,11 +491,34 @@ fun buildConfig(
             list.forEach {
                 tagMap[it.id] = buildChain(it.id, it)
             }
+            // Official edition: while a balancer country is active, steer
+            // the selector's default through a urltest over that
+            // country's members of this group. No node is locked: the
+            // urltest picks the lowest-latency member, and the manual
+            // pick stays in the selector only as a fallback choice.
+            var raceTag: String? = null
+            val activeCc = NbLoadBalancer.activeCountry(SagerNet.application)
+            if (activeCc != null) {
+                val memberTags = list.filter {
+                    NbGeoStore.countryFor(SagerNet.application, it.requireBean()) == activeCc
+                }.mapNotNull { tagMap[it.id] }
+                if (memberTags.size >= 2) {
+                    raceTag = "lb-main"
+                    outbounds.add(Outbound_URLTestOptions().apply {
+                        type = "urltest"
+                        tag = raceTag
+                        outbounds = memberTags
+                        url = "https://www.gstatic.com/generate_204"
+                        tolerance = 50
+                        race = false
+                    })
+                }
+            }
             outbounds.add(0, Outbound_SelectorOptions().apply {
                 type = "selector"
                 tag = TAG_PROXY
-                default_ = tagMap[proxy.id]
-                outbounds = tagMap.values.toList()
+                default_ = raceTag ?: tagMap[proxy.id]
+                outbounds = listOfNotNull(raceTag) + tagMap.values.toList()
             })
         } else {
             buildChain(0, proxy)
