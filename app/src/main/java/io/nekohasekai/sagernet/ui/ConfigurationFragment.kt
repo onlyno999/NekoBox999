@@ -1908,9 +1908,17 @@ class ConfigurationFragment @JvmOverloads constructor(
                     val selected = (selectedItem?.id ?: DataStore.selectedProxy) == proxyEntity.id
                     val started =
                         selected && DataStore.serviceState.started && DataStore.currentProfile == proxyEntity.id
+                    // Auto mode locks no node: when this node's pool is
+                    // armed, hide the pink selected border even if it is
+                    // the stored manual pick. Picker mode (select) still
+                    // shows its pick.
+                    val armed = !select &&
+                        NbLoadBalancer.activeCountry(view.context)?.let { activeCc ->
+                            NbGeoStore.countryFor(view.context, proxyEntity.requireBean()) == activeCc
+                        } == true
                     onMainDispatcher {
                         removeButton.isEnabled = !started
-                        selectedView.visibility = if (selected) View.VISIBLE else View.INVISIBLE
+                        selectedView.visibility = if (selected && !armed) View.VISIBLE else View.INVISIBLE
                     }
 
                     fun showShare(anchor: View) {

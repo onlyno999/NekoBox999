@@ -102,6 +102,13 @@ object NbLoadBalancer {
                 pickForConnect()
             }
         }
+        // The config is rebuilt from the armed country (lb-main
+        // default when the pool has 2+ members); a running service
+        // must reload once now to actually load it. One reload
+        // here is enough — the pick above never reloads on its own.
+        if (DataStore.serviceState.canStop) {
+            SagerNet.reloadService()
+        }
     }
 
     private fun stopLoops() {
