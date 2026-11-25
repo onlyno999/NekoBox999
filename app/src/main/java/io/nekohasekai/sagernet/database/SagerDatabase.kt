@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
 import dev.matrix.roomigrant.GenerateRoomMigrations
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.SagerNet
@@ -53,6 +54,34 @@ abstract class SagerDatabase : RoomDatabase() {
         val groupDao get() = instance.groupDao()
         val proxyDao get() = instance.proxyDao()
         val rulesDao get() = instance.rulesDao()
+
+        // Independent per-page database instance: same data file, own
+        // connection pool. A page's reads never queue behind another
+        // page's subscription updates or speed tests, which was the
+        // blank-pages root cause. Multi-instance invalidation
+        // (already enabled above) keeps each instance's view fresh.
+        // No extra data is stored: the file is shared, only the
+        // connection is separate, so the app does not grow.
+        fun newPageInstance(): SagerDatabase {
+            return Room.databaseBuilder(
+                SagerNet.application, SagerDatabase::class.java, Key.DB_PROFILE
+            )
+                .setJournalMode(JournalMode.TRUNCATE)
+                .allowMainThreadQueries()
+                .enableMultiInstanceInvalidation()
+                .fallbackToDestructiveMigration()
+                .setQueryExecutor(java.util.concurrent.Executors.newCachedThreadPool())
+                .setTransactionExecutor(java.util.concurrent.Executors.newCachedThreadPool())
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onOpen(db: SupportSQLiteDatabase) {
+                        // Default page cache is 2000 pages (~8MB cap per
+                        // connection); a full-table scan warms it up fast.
+                        // Cap each page instance at ~2MB.
+                        db.execSQL("PRAGMA cache_size = -2048")
+                    }
+                })
+                .build()
+        }
 
     }
 

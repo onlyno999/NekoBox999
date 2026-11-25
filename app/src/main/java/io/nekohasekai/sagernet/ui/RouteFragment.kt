@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
 
 class RouteFragment : ToolbarFragment(R.layout.layout_route), Toolbar.OnMenuItemClickListener {
 
+    private val pageDb by lazy { SagerDatabase.newPageInstance() }
+
     lateinit var activity: MainActivity
     lateinit var ruleListView: RecyclerView
     lateinit var ruleAdapter: RuleAdapter
@@ -131,6 +133,7 @@ class RouteFragment : ToolbarFragment(R.layout.layout_route), Toolbar.OnMenuItem
             ProfileManager.removeListener(ruleAdapter)
         }
         super.onDestroy()
+        runCatching { pageDb.close() }
     }
 
     override fun onMenuItemClick(item: MenuItem): Boolean {
@@ -169,7 +172,7 @@ class RouteFragment : ToolbarFragment(R.layout.layout_route), Toolbar.OnMenuItem
             var loaded: List<RuleEntity>? = null
             for (attempt in 0 until 5) {
                 try {
-                    loaded = ProfileManager.getRules()
+                    loaded = ProfileManager.getRules(pageDb)
                     break
                 } catch (e: Exception) {
                     Logs.w(e)
