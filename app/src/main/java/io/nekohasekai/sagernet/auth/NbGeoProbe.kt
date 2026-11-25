@@ -101,13 +101,55 @@ object NbGeoStore {
         return System.currentTimeMillis() - ts < RETRY_MS
     }
 
+    // Deleted nodes leave stale entries behind forever; cap both
+    // maps and drop the oldest first (mutableMapOf keeps insertion
+    // order) so they stay bounded no matter how many nodes come and go.
+    private const val MAX_GEO_ENTRIES = 1000
+    private const val PRUNE_TO_ENTRIES = 800
+
+    private val lock = Any()
+
+    /** Restart cleanup: trim both maps to the cap when the app
+     *  (re)starts, oldest first; the file is rewritten only when
+     *  something was actually dropped. */
+    fun pruneOnStart(context: Context) {
+        synchronized(lock) {
+            val map = loadMap(context)
+            val tryMap = loadTry(context)
+            var dropped = false
+            if (map.size > MAX_GEO_ENTRIES) {
+                pruneLocked(map)
+                dropped = true
+            }
+            if (tryMap.size > MAX_GEO_ENTRIES) {
+                pruneLocked(tryMap)
+                dropped = true
+            }
+            if (dropped) save(context)
+        }
+    }
+
+    private fun pruneLocked(map: MutableMap<String, *>) {
+        if (map.size <= MAX_GEO_ENTRIES) return
+        val it = map.keys.iterator()
+        var drop = map.size - PRUNE_TO_ENTRIES
+        while (drop-- > 0 && it.hasNext()) {
+            it.next()
+            it.remove()
+        }
+    }
+
     fun record(context: Context, bean: AbstractBean, countryCode: String?) {
         val key = keyOf(bean)
-        loadTry(context)[key] = System.currentTimeMillis()
-        if (!countryCode.isNullOrBlank()) {
-            loadMap(context)[key] = countryCode.uppercase()
+        synchronized(lock) {
+            loadTry(context)[key] = System.currentTimeMillis()
+            if (!countryCode.isNullOrBlank()) {
+                loadMap(context)[key] = countryCode.uppercase()
+            }
+            pruneLocked(loadTry(context))
+            pruneLocked(loadMap(context))
+            save(context)
         }
-        save(context)
     }
 
     private const val KEY_COLLAPSE = "geo_collapse"

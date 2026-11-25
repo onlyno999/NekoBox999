@@ -23,6 +23,7 @@ import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.isOss
 import io.nekohasekai.sagernet.ktx.isPreview
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.auth.NbGeoStore
 import io.nekohasekai.sagernet.ui.MainActivity
 import io.nekohasekai.sagernet.utils.*
 import kotlinx.coroutines.DEBUG_PROPERTY_NAME
@@ -74,6 +75,7 @@ class SagerNet : Application(),
 
             runOnDefaultDispatcher {
                 PackageCache.register()
+                NbGeoStore.pruneOnStart(this@SagerNet)
                 cleanWebview()
             }
         }
