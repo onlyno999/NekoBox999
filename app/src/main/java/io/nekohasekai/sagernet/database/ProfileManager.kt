@@ -181,8 +181,8 @@ object ProfileManager {
         }
     }
 
-    suspend fun getRules(): List<RuleEntity> {
-        var rules = SagerDatabase.rulesDao.allRules()
+    suspend fun getRules(db: SagerDatabase = SagerDatabase.instance): List<RuleEntity> {
+        var rules = db.rulesDao().allRules()
         if (rules.isEmpty() && !DataStore.rulesFirstCreate) {
             DataStore.rulesFirstCreate = true
             createRule(
@@ -231,7 +231,7 @@ object ProfileManager {
                     ), false
                 )
             }
-            rules = SagerDatabase.rulesDao.allRules()
+            rules = db.rulesDao().allRules()
         }
         return rules
     }

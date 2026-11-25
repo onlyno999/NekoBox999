@@ -34,6 +34,7 @@ import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.app
 import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.ktx.runOnIoDispatcher
 import io.nekohasekai.sagernet.utils.PackageCache
 import io.nekohasekai.sagernet.widget.AppListPreference
 import io.nekohasekai.sagernet.widget.ListListener
@@ -213,6 +214,8 @@ class RouteSettingsActivity(
         const val EXTRA_PACKAGE_NAME = "pkg"
     }
 
+    private val pageDb by lazy { SagerDatabase.newPageInstance() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setSupportActionBar(findViewById(R.id.toolbar))
@@ -225,21 +228,28 @@ class RouteSettingsActivity(
         if (savedInstanceState == null) {
             val editingId = intent.getLongExtra(EXTRA_ROUTE_ID, 0L)
             DataStore.editingId = editingId
-            runOnDefaultDispatcher {
-                if (editingId == 0L) {
-                    init(intent.getStringExtra(EXTRA_PACKAGE_NAME))
-                } else {
-                    val ruleEntity = SagerDatabase.rulesDao.getById(editingId)
-                    if (ruleEntity == null) {
-                        onMainDispatcher {
-                            finish()
+            runOnIoDispatcher {
+                val loaded = try {
+                    if (editingId == 0L) {
+                        init(intent.getStringExtra(EXTRA_PACKAGE_NAME))
+                        true
+                    } else {
+                        val ruleEntity = pageDb.rulesDao().getById(editingId)
+                        if (ruleEntity == null) {
+                            false
+                        } else {
+                            ruleEntity.init()
+                            true
                         }
-                        return@runOnDefaultDispatcher
                     }
-                    ruleEntity.init()
+                } catch (e: Exception) {
+                    false
                 }
-
                 onMainDispatcher {
+                    if (!loaded) {
+                        finish()
+                        return@onMainDispatcher
+                    }
                     supportFragmentManager.beginTransaction()
                         .replace(R.id.settings, MyPreferenceFragmentCompat())
                         .commit()
@@ -274,7 +284,7 @@ class RouteSettingsActivity(
 
             ProfileManager.createRule(RuleEntity().apply { serialize() })
         } else {
-            val entity = SagerDatabase.rulesDao.getById(DataStore.editingId)
+            val entity = pageDb.rulesDao().getById(DataStore.editingId)
             if (entity == null) {
                 finish()
                 return
@@ -306,6 +316,7 @@ class RouteSettingsActivity(
     }
 
     override fun onDestroy() {
+        runCatching { pageDb.close() }
         DataStore.profileCacheStore.unregisterChangeListener(this)
         super.onDestroy()
     }
