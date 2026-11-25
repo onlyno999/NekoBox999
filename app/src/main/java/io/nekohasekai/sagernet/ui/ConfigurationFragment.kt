@@ -1917,7 +1917,12 @@ class ConfigurationFragment @JvmOverloads constructor(
                             NbGeoStore.countryFor(view.context, proxyEntity.requireBean()) == activeCc
                         } == true
                     onMainDispatcher {
-                        removeButton.isEnabled = !started
+                        // In auto mode the service runs on the pool's
+                        // urltest group, not on any single node, so the
+                        // single-node "started" guard must not grey out
+                        // edit/remove for pool members either.
+                        editButton.isEnabled = !started || armed
+                        removeButton.isEnabled = !started || armed
                         selectedView.visibility = if (selected && !armed) View.VISIBLE else View.INVISIBLE
                     }
 
