@@ -131,7 +131,7 @@ class TrafficLooper
                 proxy.box.setV2rayStats(tags.joinToString("\n"))
             }
 
-            trafficUpdater.updateAll()
+            trafficUpdater.updateAll(profileTrafficStatistics)
             if (!sc.isActive) return
 
             // add all non-bypass to "main"
@@ -143,9 +143,9 @@ class TrafficLooper
                 if (!it.ignore) {
                     mainTxRate += it.txRate
                     mainRxRate += it.rxRate
+                    mainTx += it.tx - it.txBase
+                    mainRx += it.rx - it.rxBase
                 }
-                mainTx += it.tx - it.txBase
-                mainRx += it.rx - it.rxBase
             }
 
             // speed
